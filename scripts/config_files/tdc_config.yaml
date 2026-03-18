@@ -1,0 +1,41 @@
+# tdc_config.yaml
+# ================
+# Edit this file to configure your TDC time-profile run.
+
+# Data paths
+# {hem} is replaced by the hemisphere id at runtime
+paths:
+  data:    ../FAT_data/prod_characterization_{hem}/
+  output:  ./data/
+
+# Measurement settings
+settings:
+  pwm:         54000     # power [a.u.]
+  coarse:      1         # LMG coarse setting
+  fine:        20        # LMG fine setting
+  mode:        default   # KAPU mode: 'default' or 'fast'
+  double_peak: false     # set to true for emitters with a second peak (e.g. LMG520)
+  uncertainty: false     # use Poissonian bin weights in fit
+
+# Temperatures to process for every hemisphere/emitter combination.
+temperatures:
+  - 0
+  - -20
+
+# Emitters to process for every hemisphere listed below.
+# Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
+emitters:
+  - LMG405
+
+# Hemispheres to process.
+# Each entry needs:
+#   hemisphere  : HDF5 file id (the directory/file name suffix)
+#   device_id   : POCAM device number (for output file naming and UIDs)
+hemispheres:
+  - hemisphere: "03"
+    device_id:  "02"
+    batch: batch2
+
+  - hemisphere: "04"
+    device_id:  "02"
+    batch: batch2

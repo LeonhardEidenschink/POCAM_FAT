@@ -1,0 +1,43 @@
+# spectrometer_config.yaml
+# =========================
+# Edit this file to configure your spectrometer run.
+
+# Data paths
+# {hem} is replaced by the hemisphere id at runtime
+paths:
+  data:       ../FAT_data/prod_characterization_{hem}/
+  output:     ./data/
+  wavelength: ../FAT_data/wavelength_array.npy
+
+# Measurement settings
+settings:
+  pwm:    54000     # power [a.u.]
+  coarse: 1         # LMG coarse setting
+  fine:   20        # LMG fine setting
+  mode:   default   # KAPU mode: 'default' or 'fast'
+
+# Temperatures to process for every hemisphere/emitter combination.
+# Use the string '25C_precheck' for precheck measurements.
+temperatures:
+  - 25
+  - 0
+  - -10
+  - -20
+
+# Emitters to process for every hemisphere listed below.
+# Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
+emitters:
+  - LMG405
+
+# Hemispheres to process.
+# Each entry needs:
+#   hemisphere  : HDF5 file id (the directory/file name suffix)
+#   device_id   : POCAM device number (for output file naming and UIDs)
+hemispheres:
+  - hemisphere: "03"
+    device_id:  "02"
+    batch:      batch2
+
+  - hemisphere: "03"
+    device_id:  "02"
+    batch:      batch2

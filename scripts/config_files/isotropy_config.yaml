@@ -1,0 +1,32 @@
+# isotropy_config.yaml
+# ====================
+# Edit this file to configure your isotropy run.
+
+# Data paths
+paths:
+  batch1_data: ../FAT_data/prod_characterization_{hem}/cali_flange_{hem}
+  batch2_data: ../FAT_data/prod_characterization_{hem}/cali_flange_{hem}
+  output:      ./data/
+# Measurement settings
+settings:
+  temp:   25        # temperature [°C]
+  coarse: 1         # LMG coarse setting
+  fine:   20        # LMG fine setting
+  mode:   default   # KAPU mode: 'default' or 'fast'
+  pwm:    54000     # power [a.u.]
+  target: None      # 'master', 'slave', or 'None'
+
+# Emitters to process for every device listed below.
+# Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
+emitters:
+  - LMG405
+
+# Devices: each entry needs an id, two hemispheres, and a batch.
+devices:
+  - id:          '02'
+    hemispheres: ['03', '04']
+    batch:       batch2
+
+  # - id:          '04'
+  #   hemispheres: ['05', '06']
+  #   batch:       batch2
