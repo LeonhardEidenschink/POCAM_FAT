@@ -139,7 +139,7 @@ class SingleSpecData:
 
     N_BINS = 288   # fixed spectrometer pixel count
 
-    def __init__(self, hemisphere, pwm, temp, diode,
+    def __init__(self, hemisphere, pwm, temp, diode,batch,
                  coarse=1, fine=20, mode='default',
                  base_path=None, wavelength_path=None):
 
@@ -154,7 +154,7 @@ class SingleSpecData:
 
         self.wavelength = np.load(wavelength_path)
 
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch=batch, hem=hemisphere)
         h = h5.File(h5_path + diode, 'r')
 
         # Try driver target '1', fall back to '2'
@@ -291,7 +291,7 @@ def compute_and_save(hemisphere, device_id, emitter,
 
     spec = SingleSpecData(
         hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-        coarse=coarse, fine=fine, mode=mode,
+        coarse=coarse, fine=fine, mode=mode,batch = batch,
         base_path=base_path, wavelength_path=wavelength_path)
 
     target_label = 'master' if spec.target == '1' else 'slave'

@@ -5,8 +5,8 @@
 # Data paths
 # {hem} is replaced by the hemisphere id at runtime
 paths:
-  data:    ../FAT_data/prod_characterization_{hem}/
-  output:  ./data/
+  data: /home/ecp/disk1/main_pocam_data/{batch}/prod_characterization_{hem}/
+  output:      ../output/
 
 # Measurement settings
 settings:
@@ -32,10 +32,159 @@ emitters:
 #   hemisphere  : HDF5 file id (the directory/file name suffix)
 #   device_id   : POCAM device number (for output file naming and UIDs)
 hemispheres:
+  - hemisphere: "11"
+    device_id:  "003"
+    batch:      batch1
+  - hemisphere: "12"
+    device_id:  "003"
+    batch:      batch1
+  - hemisphere: "18"
+    device_id:  "005"
+    batch:      batch1
+  - hemisphere: "20"
+    device_id:  "005"
+    batch:      batch1
+  - hemisphere: "19"
+    device_id:  "006"
+    batch:      batch1
+  - hemisphere: "22"
+    device_id:  "006"
+    batch:      batch1
+  - hemisphere: "23"
+    device_id:  "008"
+    batch:      batch1
+  - hemisphere: "24"
+    device_id:  "008"
+    batch:      batch1
+  - hemisphere: "09"
+    device_id:  "010"
+    batch:      batch1
+  - hemisphere: "10"
+    device_id:  "010"
+    batch:      batch1
+  - hemisphere: "13"
+    device_id:  "011"
+    batch:      batch1
+  - hemisphere: "16"
+    device_id:  "011"
+    batch:      batch1
   - hemisphere: "03"
-    device_id:  "02"
-    batch: batch2
-
+    device_id:  "002"
+    batch:      batch2
   - hemisphere: "04"
-    device_id:  "02"
-    batch: batch2
+    device_id:  "002"
+    batch:      batch2
+  - hemisphere: "05"
+    device_id:  "004"
+    batch:      batch2
+  - hemisphere: "06"
+    device_id:  "004"
+    batch:      batch2
+  - hemisphere: "14"
+    device_id:  "009"
+    batch:      batch2
+  - hemisphere: "15"
+    device_id:  "009"
+    batch:      batch2
+  - hemisphere: "17"
+    device_id:  "012"
+    batch:      batch2
+  - hemisphere: "21"
+    device_id:  "012"
+    batch:      batch2
+  - hemisphere: "25"
+    device_id:  "013"
+    batch:      batch2
+  - hemisphere: "26"
+    device_id:  "013"
+    batch:      batch2
+  - hemisphere: "27"
+    device_id:  "014"
+    batch:      batch2
+  - hemisphere: "28"
+    device_id:  "014"
+    batch:      batch2
+  - hemisphere: "29"
+    device_id:  "015"
+    batch:      batch2
+  - hemisphere: "30"
+    device_id:  "015"
+    batch:      batch2
+  - hemisphere: "31"
+    device_id:  "016"
+    batch:      batch2
+  - hemisphere: "32"
+    device_id:  "016"
+    batch:      batch2
+  - hemisphere: "33"
+    device_id:  "017"
+    batch:      batch2
+  - hemisphere: "34"
+    device_id:  "017"
+    batch:      batch2
+  - hemisphere: "35"
+    device_id:  "018"
+    batch:      batch2
+  - hemisphere: "36"
+    device_id:  "018"
+    batch:      batch2
+  - hemisphere: "37"
+    device_id:  "019"
+    batch:      batch2
+  - hemisphere: "38"
+    device_id:  "019"
+    batch:      batch2
+  - hemisphere: "39"
+    device_id:  "020"
+    batch:      batch2
+  - hemisphere: "40"
+    device_id:  "020"
+    batch:      batch2
+  - hemisphere: "41"
+    device_id:  "021"
+    batch:      batch2
+  - hemisphere: "42"
+    device_id:  "021"
+    batch:      batch2
+  - hemisphere: "43"
+    device_id:  "022"
+    batch:      batch2
+  - hemisphere: "44"
+    device_id:  "022"
+    batch:      batch2
+  - hemisphere: "45"
+    device_id:  "023"
+    batch:      batch2
+  - hemisphere: "46"
+    device_id:  "023"
+    batch:      batch2
+  - hemisphere: "47"
+    device_id:  "024"
+    batch:      batch2
+  - hemisphere: "48"
+    device_id:  "024"
+    batch:      batch2
+  - hemisphere: "49"
+    device_id:  "025"
+    batch:      batch2
+  - hemisphere: "50"
+    device_id:  "025"
+    batch:      batch2
+  - hemisphere: "51"
+    device_id:  "026"
+    batch:      batch2
+  - hemisphere: "52"
+    device_id:  "026"
+    batch:      batch2
+  - hemisphere: "53"
+    device_id:  "027"
+    batch:      batch2
+  - hemisphere: "54"
+    device_id:  "027"
+    batch:      batch2
+  - hemisphere: "55"
+    device_id:  "028"
+    batch:      batch2
+  - hemisphere: "56"
+    device_id:  "028"
+    batch:      batch2

@@ -27,6 +27,13 @@ from numpy.random import multivariate_normal
 from scipy.optimize import curve_fit
 import healpy as hp
 
+from pocam_utils import (
+    X_PRE, 
+    Y_PRE,
+    X_VALUES, 
+    Y_VALUES,
+)
+
 
 # ---------------------------------------------------------------------------
 # Physical constants
@@ -48,25 +55,10 @@ NIST_RESPONSIVITY = {
 }
 
 # Air-to-ice transmission correction look-up table (from calibration)
-_X_PRE = np.array([62.70,60.16,57.69,55.16,52.62,50.22,47.54,45.14,42.67,
-                   40.27,37.66,34.99,32.59,30.05,27.58,25.18,22.64,20.24,
-                   17.63,15.09,12.69,10.08,7.54,5.07,2.67,0.34])
-_Y_PRE = np.array([0.960,0.966,0.968,0.969,0.971,0.975,0.980,0.981,0.990,
-                   0.990,0.991,0.991,0.994,0.997,1.000,1.000,1.000,1.003,
-                   1.001,1.004,1.004,1.006,1.006,1.006,1.006,1.007])
-_X_VALS = np.array([65.17,67.64,70.18,70.11,72.64,72.58,75.18,75.25,77.64,
-                    77.65,80.18,80.18,82.64,82.64,85.10,85.10,87.64,87.63,
-                    90.10,90.16,90.26,92.62,95.09,95.08,97.56,97.55,100.16,
-                    100.01,102.55,102.54,105.01,105.00,107.55,107.54,110.01,
-                    110.07,112.61,112.54,115.08,115.15,117.62,117.62,119.95,
-                    119.95,125.,125.,130.,130.,135.,135.,140.,140.,150.,150.,
-                    160.,160.])
-_Y_VALS = np.array([0.958,0.953,0.939,0.949,0.909,0.934,0.874,0.903,0.832,
-                    0.860,0.783,0.798,0.725,0.726,0.668,0.656,0.606,0.577,
-                    0.542,0.497,0.480,0.416,0.416,0.337,0.353,0.262,0.293,
-                    0.186,0.233,0.122,0.176,0.069,0.125,0.025,0.075,0.005,
-                    0.039,-0.001,0.014,-0.001,0.006,-0.002,0.005,-0.002,
-                    0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.])
+_X_PRE = np.array(X_PRE)
+_Y_PRE = np.array(Y_PRE)
+_X_VALS = np.array(X_VALUES)
+_Y_VALS = np.array(Y_VALUES)
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +156,7 @@ class SinglePDData:
     mean_signal_err  : float  combined statistical uncertainty
     """
 
-    def __init__(self, hemisphere, pwm, temp, diode,
+    def __init__(self, hemisphere, pwm, temp, diode,batch,
                  target='1', coarse=1, fine=20, mode='default',
                  base_path=None):
 
@@ -176,8 +168,9 @@ class SinglePDData:
         self.fine      = fine
         self.mode      = mode
         self.temp      = temp
+        self.batch     = batch
 
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch = batch, hem=hemisphere)
         h = h5.File(h5_path + diode, 'r')
         key = _build_key(diode, self.driver, pwm, coarse, fine, mode, temp)
 
@@ -214,7 +207,7 @@ class SinglePMTData:
         trigger_rising_edge, start_integration, end_integration
     """
 
-    def __init__(self, hemisphere, pwm, temp, diode,
+    def __init__(self, hemisphere, pwm, temp, diode, batch, 
                  target='1', coarse=1, fine=20, mode='default',
                  base_path=None, info=False):
 
@@ -226,8 +219,9 @@ class SinglePMTData:
         self.fine   = fine
         self.mode   = mode
         self.temp   = temp
+        self.batch  = batch
 
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch = batch, hem=hemisphere)
         h = h5.File(h5_path + diode, 'r')
         key = _build_key(diode, self.driver, pwm, coarse, fine, mode, temp)
 
@@ -321,12 +315,13 @@ class SingleAngularCalData:
     zero_current_A   : float  normalisation current [A]
     """
 
-    def __init__(self, hemisphere, diode, base_path, cal_prefix='cali_flange_'):
+    def __init__(self, hemisphere, diode, base_path, batch, cal_prefix='cali_flange_'):
 
         self.diode     = diode
         self.hemisphere = hemisphere
+        self.batch     = batch
 
-        h5_path  = base_path.format(hem=hemisphere)
+        h5_path  = base_path.format(batch = batch, hem=hemisphere)
         cal_file = h5_path + cal_prefix + hemisphere
         h        = h5.File(cal_file, 'r+')
 
@@ -456,7 +451,7 @@ def compute_and_save(hemisphere, device_id, emitter,
 
     # ---- Auto-detect target if not specified ----
     if target is None:
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch =batch, hem=hemisphere)
         h       = h5.File(h5_path + emitter, 'r')
         target, _ = _resolve_target(h, emitter, pwm, coarse, fine, mode, temp)
         h.close()
@@ -466,18 +461,18 @@ def compute_and_save(hemisphere, device_id, emitter,
     # ---- PD signal at requested conditions ----
     pd_data = SinglePDData(
         hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-        target=target, coarse=coarse, fine=fine, mode=mode,
+        target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
         base_path=base_path)
 
     # ---- PD signal at baseline conditions (25 °C, max power, default shape) ----
     pd_norm = SinglePDData(
         hemisphere=hemisphere, pwm=54000, temp=25, diode=emitter,
-        target=target, coarse=1, fine=20, mode='default',
+        target=target, coarse=1, fine=20, mode='default', batch=batch,
         base_path=base_path)
 
     # ---- Angular calibration + baseline photon number ----
     cal = SingleAngularCalData(
-        hemisphere=hemisphere, diode=emitter,
+        hemisphere=hemisphere, diode=emitter, batch=batch,
         base_path=base_path, cal_prefix=cal_prefix)
 
     # ---- Scale photons from PD ratio ----
@@ -501,7 +496,7 @@ def compute_and_save(hemisphere, device_id, emitter,
     try:
         pmt_data = SinglePMTData(
             hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-            target=target, coarse=coarse, fine=fine, mode=mode,
+            target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
             base_path=base_path)
         data_pmt_mean = float(np.mean(pmt_data.processed_data['integrated_signal']))
 
@@ -509,7 +504,7 @@ def compute_and_save(hemisphere, device_id, emitter,
         norm_pwm = 54000
         for try_pwm in [54000, 45000, 35000, 30000, 25000, 20000, 15000, 10000, 7500]:
             norm_pmt_obj = SinglePMTData(
-                hemisphere=hemisphere, pwm=try_pwm, temp=temp, diode=emitter,
+                hemisphere=hemisphere, pwm=try_pwm, temp=temp, diode=emitter, batch=batch,
                 target=target, coarse=1, fine=20, mode='default',
                 base_path=base_path)
             if np.max(norm_pmt_obj.processed_data['peak']) < 4500:
@@ -519,7 +514,7 @@ def compute_and_save(hemisphere, device_id, emitter,
 
         norm_pd_cross = SinglePDData(
             hemisphere=hemisphere, pwm=norm_pwm, temp=temp, diode=emitter,
-            target=target, coarse=coarse, fine=fine, mode=mode,
+            target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
             base_path=base_path).mean_signal_vals
 
         emitted_photons_pmt = ((data_pmt_mean / norm_pmt_mean)

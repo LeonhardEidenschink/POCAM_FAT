@@ -55,6 +55,7 @@ if __name__ == '__main__':
                     mode       = s['mode'],
                     target     = s['target'],
                     paths      = paths,
+                    batch      = batch,
                 )
                 n     = result['meas_data'][0]['value']
                 n_err = result['meas_data'][0]['error']

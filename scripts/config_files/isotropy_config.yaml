@@ -4,9 +4,10 @@
 
 # Data paths
 paths:
-  batch1_data: ../FAT_data/prod_characterization_{hem}/cali_flange_{hem}
-  batch2_data: ../FAT_data/prod_characterization_{hem}/cali_flange_{hem}
-  output:      ./data/
+  batch1_data: /home/ecp/disk1/main_pocam_data/batch1/prod_characterization_{hem}/cali_flange_{hem}
+  batch2_data: /home/ecp/disk1/main_pocam_data/batch2/prod_characterization_{hem}/cali_flange_{hem}
+  output:      ../output/
+  
 # Measurement settings
 settings:
   temp:   25        # temperature [°C]
@@ -19,14 +20,113 @@ settings:
 # Emitters to process for every device listed below.
 # Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
 emitters:
-  - LMG405
+  - LMG450
 
-# Devices: each entry needs an id, two hemispheres, and a batch.
+# Devices: each entry needs an id, two hemispheres, and a batch.    
 devices:
-  - id:          '02'
-    hemispheres: ['03', '04']
-    batch:       batch2
+    - id: '003'
+      hemispheres: ['11', '12']
+      batch: batch1
+      
+    - id: '005'
+      hemispheres: ['18', '20']
+      batch: batch1
+      
+    - id: '006'
+      hemispheres: ['19', '22']
+      batch: batch1
+      
+    - id: '008'
+      hemispheres: ['23', '24']
+      batch: batch1
+      
+    - id: '010'
+      hemispheres: ['09', '10']
+      batch: batch1
+      
+    - id: '011'
+      hemispheres: ['13', '16']
+      batch: batch1
+      
+    - id: '002'
+      hemispheres: ['03', '04']
+      batch: batch2
+      
+    - id: '004'
+      hemispheres: ['05', '06']
+      batch: batch2
+      
+    - id: '009'
+      hemispheres: ['14', '15']
+      batch: batch2
+      
+    - id: '012'
+      hemispheres: ['17', '21']
+      batch: batch2
+      
+    - id: '013'
+      hemispheres: ['25', '26']
+      batch: batch2
+      
+    - id: '014'
+      hemispheres: ['27', '28']
+      batch: batch2
+      
+    - id: '015'
+      hemispheres: ['29', '30']
+      batch: batch2
+      
+    - id: '016'
+      hemispheres: ['31', '32']
+      batch: batch2
+      
+    - id: '017'
+      hemispheres: ['33', '34']
+      batch: batch2
+      
+    - id: '018'
+      hemispheres: ['35', '36']
+      batch: batch2
+      
+    - id: '019'
+      hemispheres: ['37', '38']
+      batch: batch2
+      
+    - id: '020'
+      hemispheres: ['39', '40']
+      batch: batch2
+      
+    - id: '021'
+      hemispheres: ['41', '42']
+      batch: batch2
+      
+    - id: '022'
+      hemispheres: ['43', '44']
+      batch: batch2
+      
+    - id: '023'
+      hemispheres: ['45', '46']
+      batch: batch2
+      
+    - id: '024'
+      hemispheres: ['47', '48']
+      batch: batch2
+      
+    - id: '025'
+      hemispheres: ['49', '50']
+      batch: batch2
+      
+    - id: '026'
+      hemispheres: ['51', '52']
+      batch: batch2
+      
+    - id: '027'
+      hemispheres: ['53', '54']
+      batch: batch2
+      
+    - id: '028'
+      hemispheres: ['55', '56']
+      batch: batch2
+      
 
-  # - id:          '04'
-  #   hemispheres: ['05', '06']
-  #   batch:       batch2
+

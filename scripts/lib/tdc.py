@@ -132,7 +132,7 @@ class SingleTDCData:
     second_peak_delay       : delay of 2nd peak vs main [ns] (double peak only)
     """
 
-    def __init__(self, hemisphere, pwm, temp, diode,
+    def __init__(self, hemisphere, pwm, temp, diode,batch,
                  coarse=1, fine=20, mode='default',
                  double_peak=False, uncertainty=True,
                  base_path=None):
@@ -146,8 +146,9 @@ class SingleTDCData:
         self.temp        = temp
         self.double_peak = double_peak
         self.uncertainty = uncertainty
+        self.batch       = batch
 
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch = batch, hem=hemisphere)
         h = h5.File(h5_path + diode, 'r')
 
         # Try target '1', fall back to '2'
@@ -341,10 +342,11 @@ def compute_and_save(hemisphere, device_id, emitter,
     """
     base_path = paths['data']
     driver    = _driver_char(emitter)
+    batch = batch
 
     tdc = SingleTDCData(
         hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-        coarse=coarse, fine=fine, mode=mode,
+        coarse=coarse, fine=fine, mode=mode, batch = batch,
         double_peak=double_peak, uncertainty=uncertainty,
         base_path=base_path)
 

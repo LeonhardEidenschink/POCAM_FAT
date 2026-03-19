@@ -97,7 +97,7 @@ class SinglePDData:
         self.temp   = temp
         self.batch  = batch
 
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch=batch, hem=hemisphere)
         h = h5.File(h5_path + diode, 'r')
 
         # Try target '1', fall back to '2'
@@ -149,9 +149,8 @@ class SinglePMTData:
         trigger_rising_edge, start_integration, end_integration
     """
 
-    def __init__(self, hemisphere, pwm, temp, target, diode,
-                 coarse=1, fine=20, mode='default',
-                 batch='batch2', base_path=None, info=False):
+    def __init__(self, hemisphere, pwm, temp, target, diode, batch,
+                 coarse=1, fine=20, mode='default', base_path=None, info=False):
 
         self.diode     = diode
         self.hemisphere = hemisphere
@@ -164,7 +163,7 @@ class SinglePMTData:
         self.temp      = temp
         self.batch     = batch
 
-        h5_path = base_path.format(hem=hemisphere)
+        h5_path = base_path.format(batch = batch, hem=hemisphere)
         h = h5.File(h5_path + diode, 'r')
         key = _data_key(diode, self.driver, pwm, coarse, fine, mode, temp)
         self.pmt_time_ns = np.array(h[key].get('pmt_time_ns'))
@@ -298,7 +297,7 @@ def photons_baseline(hemisphere, diode, batch, base_path):
     """
     popt_air, popt_ice = fit_correction_curves()
 
-    file_path = base_path.format(hem=hemisphere)
+    file_path = base_path.format(batch = batch, hem=hemisphere)
     hem = AngularCalibration(file_path + f'cali_flange_{hemisphere}')
 
     y, y_err = hem.curr(diode)
@@ -384,10 +383,10 @@ class NumberOfPhotons:
     diode, pwm, coarse, fine, mode, temp : (as passed)
     """
 
-    def __init__(self, hemisphere, temp, diode, pwm,
+    def __init__(self, hemisphere, temp, diode, pwm,batch,
                  coarse=1, fine=20, mode='default',
-                 batch='batch2', base_path=None):
-
+                 base_path=None):
+        
         self.diode     = diode
         self.hemisphere = hemisphere
         self.batch     = batch
@@ -453,7 +452,7 @@ def _driver_char(diode):
 
 
 def compute_and_save(hemisphere, device_id, emitter,
-                     pwm, temp, coarse, fine, mode, target,
+                     pwm, temp, coarse, fine, mode, target,batch,
                      paths):
     """
     Compute photon number and write JSON output file.
@@ -469,7 +468,6 @@ def compute_and_save(hemisphere, device_id, emitter,
     -------
     dict — assembled emission intensity dictionary
     """
-    batch     = paths.get('batch', 'batch2')
     base_path = paths['data']
     driver    = _driver_char(emitter)
 

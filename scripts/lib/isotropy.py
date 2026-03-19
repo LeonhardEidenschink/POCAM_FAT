@@ -69,8 +69,6 @@ class IsotropyBatch1:
 
             data_1 = np.array(h1.get(diode))   # [0] = mean, [1] = error
             data_2 = np.array(h2.get(diode))
-            print(len(h1['meta'].attrs['zenith']))
-            print(h1['meta'].attrs['zenith'])
             zen    = h1['meta'].attrs['zenith'].reshape(16, 6)
 
         data1, err1 = data_1[0], data_1[1]

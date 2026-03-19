@@ -5,8 +5,8 @@
 # Data paths
 # {hem} is replaced by the hemisphere id at runtime
 paths:
-  data:       ../FAT_data/prod_characterization_{hem}/
-  output:     ./data/
+  data: /home/ecp/disk1/main_pocam_data/{batch}/prod_characterization_{hem}/
+  output:      ../output/
   cal_prefix: cali_flange_   # calibration file prefix (joined with hemisphere id)
 
 # Measurement settings
@@ -35,9 +35,122 @@ emitters:
 #   batch       : data batch label
 hemispheres:
   - hemisphere: "03"
-    device_id:  "02"
-    batch: batch2
-
+    device_id:  "002"
+    batch:      batch2
   - hemisphere: "04"
-    device_id:  "02"
-    batch: batch2
+    device_id:  "002"
+    batch:      batch2
+  - hemisphere: "05"
+    device_id:  "004"
+    batch:      batch2
+  - hemisphere: "06"
+    device_id:  "004"
+    batch:      batch2
+  - hemisphere: "14"
+    device_id:  "009"
+    batch:      batch2
+  - hemisphere: "15"
+    device_id:  "009"
+    batch:      batch2
+  - hemisphere: "17"
+    device_id:  "012"
+    batch:      batch2
+  - hemisphere: "21"
+    device_id:  "012"
+    batch:      batch2
+  - hemisphere: "25"
+    device_id:  "013"
+    batch:      batch2
+  - hemisphere: "26"
+    device_id:  "013"
+    batch:      batch2
+  - hemisphere: "27"
+    device_id:  "014"
+    batch:      batch2
+  - hemisphere: "28"
+    device_id:  "014"
+    batch:      batch2
+  - hemisphere: "29"
+    device_id:  "015"
+    batch:      batch2
+  - hemisphere: "30"
+    device_id:  "015"
+    batch:      batch2
+  - hemisphere: "31"
+    device_id:  "016"
+    batch:      batch2
+  - hemisphere: "32"
+    device_id:  "016"
+    batch:      batch2
+  - hemisphere: "33"
+    device_id:  "017"
+    batch:      batch2
+  - hemisphere: "34"
+    device_id:  "017"
+    batch:      batch2
+  - hemisphere: "35"
+    device_id:  "018"
+    batch:      batch2
+  - hemisphere: "36"
+    device_id:  "018"
+    batch:      batch2
+  - hemisphere: "37"
+    device_id:  "019"
+    batch:      batch2
+  - hemisphere: "38"
+    device_id:  "019"
+    batch:      batch2
+  - hemisphere: "39"
+    device_id:  "020"
+    batch:      batch2
+  - hemisphere: "40"
+    device_id:  "020"
+    batch:      batch2
+  - hemisphere: "41"
+    device_id:  "021"
+    batch:      batch2
+  - hemisphere: "42"
+    device_id:  "021"
+    batch:      batch2
+  - hemisphere: "43"
+    device_id:  "022"
+    batch:      batch2
+  - hemisphere: "44"
+    device_id:  "022"
+    batch:      batch2
+  - hemisphere: "45"
+    device_id:  "023"
+    batch:      batch2
+  - hemisphere: "46"
+    device_id:  "023"
+    batch:      batch2
+  - hemisphere: "47"
+    device_id:  "024"
+    batch:      batch2
+  - hemisphere: "48"
+    device_id:  "024"
+    batch:      batch2
+  - hemisphere: "49"
+    device_id:  "025"
+    batch:      batch2
+  - hemisphere: "50"
+    device_id:  "025"
+    batch:      batch2
+  - hemisphere: "51"
+    device_id:  "026"
+    batch:      batch2
+  - hemisphere: "52"
+    device_id:  "026"
+    batch:      batch2
+  - hemisphere: "53"
+    device_id:  "027"
+    batch:      batch2
+  - hemisphere: "54"
+    device_id:  "027"
+    batch:      batch2
+  - hemisphere: "55"
+    device_id:  "028"
+    batch:      batch2
+  - hemisphere: "56"
+    device_id:  "028"
+    batch:      batch2
