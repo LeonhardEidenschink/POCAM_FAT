@@ -32,6 +32,16 @@ from pocam_utils import (
     Y_PRE,
     X_VALUES, 
     Y_VALUES,
+    NIST,
+    sigmoid,
+    int_func,
+    integrate_solid_angle,
+    calc_photons,
+    fit_correction_curves,
+    _lmg_key,
+    _kapu_key,
+    _build_key,
+    _resolve_target,
 )
 
 
@@ -44,90 +54,11 @@ A_PD = 1.0                   # photodiode active area [cm²]
 DIST_CM = 96.0               # flange-equator to PD surface [cm]
 PMT_TRIGGER_THRESHOLD = 1300 # trigger rising-edge threshold [mV]
 
-# NIST responsivity values [A/W] and their errors for each emitter
-NIST_RESPONSIVITY = {
-    'LMG365':  [0.1416, 0.00380],
-    'LMG405':  [0.1800, 0.00300],
-    'LMG450':  [0.2111, 0.00240],
-    'LMG520':  [0.2610, 0.00100],
-    'KAPU405': [0.1800, 0.00300],
-    'KAPU465': [0.2220, 0.00200],
-}
-
 # Air-to-ice transmission correction look-up table (from calibration)
 _X_PRE = np.array(X_PRE)
 _Y_PRE = np.array(Y_PRE)
 _X_VALS = np.array(X_VALUES)
 _Y_VALS = np.array(Y_VALUES)
-
-
-# ---------------------------------------------------------------------------
-# HDF5 key helpers  (mirrors tdc.py)
-# ---------------------------------------------------------------------------
-
-def _lmg_key(driver, pwm, coarse, fine, temp):
-    return f'{driver}/{pwm}/{coarse}-{fine}/{temp}C'
-
-
-def _kapu_key(driver, pwm, mode, temp):
-    return f'{driver}/{pwm}/{mode}/{temp}C'
-
-
-def _build_key(diode, driver, pwm, coarse, fine, mode, temp):
-    if 'LMG' in diode:
-        return _lmg_key(driver, pwm, coarse, fine, temp)
-    return _kapu_key(driver, pwm, mode, temp)
-
-
-def _resolve_target(h5file, diode, pwm, coarse, fine, mode, temp):
-    """Try target '1', fall back to '2'. Return (target_str, driver_str)."""
-    prefix = 'lmg' if 'LMG' in diode else 'kapu'
-    for t in ('1', '2'):
-        driver = prefix + t
-        key    = _build_key(diode, driver, pwm, coarse, fine, mode, temp)
-        try:
-            _ = h5file[key]
-            return t, driver
-        except KeyError:
-            continue
-    raise KeyError(f'No data found for {diode} at {temp}°C '
-                   f'(tried both targets) in {h5file.filename}')
-
-
-# ---------------------------------------------------------------------------
-# Fit / integration helpers
-# ---------------------------------------------------------------------------
-
-def _sigmoid(x, k, w, x0, y0):
-    return k / (1.0 + np.exp(-w * (x - x0))) + y0
-
-
-def _int_func(x, k, w, x0, y0):
-    """Sigmoid weighted by sin(x) for solid-angle integration."""
-    return _sigmoid(x, k, w, x0, y0) * np.sin(x)
-
-
-def _integrate_sigmoid(popt):
-    """Integrate _int_func from 0 to π."""
-    return scipy.integrate.quad(lambda x: _int_func(x, *popt), 0, np.pi)[0]
-
-
-def _calc_photons(current_A, wavelength_m, responsivity, pulse_time_s, geo):
-    """Convert measured photo-current to number of photons per pulse."""
-    return current_A * pulse_time_s * wavelength_m * geo / (responsivity * HC)
-
-
-def _air_to_ice_popts():
-    """Fit the air and ice sigmoid correction curves once."""
-    x_air = np.concatenate([np.flip(_X_PRE), _X_VALS[::2]])[10:]
-    x_ice = np.concatenate([np.flip(_X_PRE), _X_VALS[1::2]])
-    y_air = np.concatenate([np.flip(_Y_PRE), _Y_VALS[::2]])[10:]
-    y_ice = np.concatenate([np.flip(_Y_PRE), _Y_VALS[1::2]])
-    popt_air, _ = curve_fit(_sigmoid, x_air, y_air,
-                            p0=[1.1, -1.0, 95, -0.001], maxfev=1000)
-    popt_ice, _ = curve_fit(_sigmoid, x_ice, y_ice,
-                            p0=[1.1, -1.0, 95, -0.001], maxfev=1000)
-    return popt_air, popt_ice
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +289,7 @@ class SingleAngularCalData:
         h.close()
 
         # ---- Air-to-ice correction ----
-        popt_air, popt_ice = _air_to_ice_popts()
+        popt_air, popt_ice = fit_correction_curves()
         zen_rad  = zeniths * np.pi / 180.0
         val_norm = y_mean * 1e-12 / self.zero_current_A   # normalise
 
@@ -367,27 +298,27 @@ class SingleAngularCalData:
         dp_err = np.sqrt((y_err * 1e-12)**2
                          + (val_norm * sim_mismatch)**2)
 
-        values = val_norm * (_sigmoid(zen_rad, *popt_ice)
-                             / _sigmoid(zen_rad, *popt_air))
+        values = val_norm * (sigmoid(zen_rad, *popt_ice)
+                             / sigmoid(zen_rad, *popt_air))
 
         # ---- Angular fit ----
-        popt, pcov = curve_fit(_sigmoid, zen_rad, values,
+        popt, pcov = curve_fit(sigmoid, zen_rad, values,
                                p0=[1.1, -5.0, 1.5, -0.005], maxfev=1000)
         self.popt = popt
         self.pcov = pcov
 
         # ---- Photon number (MC) ----
-        resp       = NIST_RESPONSIVITY[diode][0]
-        resp_err   = NIST_RESPONSIVITY[diode][1]
+        resp       = NIST[diode][0]
+        resp_err   = NIST[diode][1]
         wl_m       = float(diode[-3:]) * 1e-9
         geo        = DIST_CM**2 / A_PD
 
-        baseline   = _calc_photons(self.zero_current_A, wl_m, resp,
+        baseline   = calc_photons(self.zero_current_A, wl_m, resp,
                                    self.pulse_time_s, geo)
 
         N_mc       = 1000
         param_samp = multivariate_normal(popt, pcov, size=N_mc)
-        ph_samp    = [_integrate_sigmoid(s) * 2 * np.pi * baseline
+        ph_samp    = [integrate_solid_angle(s) * 2 * np.pi * baseline
                       for s in param_samp]
 
         self.photons           = float(np.mean(ph_samp))
@@ -454,6 +385,7 @@ def compute_and_save(hemisphere, device_id, emitter,
         h5_path = base_path.format(batch =batch, hem=hemisphere)
         h       = h5.File(h5_path + emitter, 'r')
         target, _ = _resolve_target(h, emitter, pwm, coarse, fine, mode, temp)
+        print(target)
         h.close()
 
     target_label = 'master' if target == '1' else 'slave'
@@ -604,7 +536,7 @@ def compute_and_save(hemisphere, device_id, emitter,
                            f'hem_{hemisphere}',
                            emitter)
     os.makedirs(out_dir, exist_ok=True)
-    filename = f'intensity_{temp}C.json'
+    filename = f'self_monitoring_{temp}C.json'
     out_path = os.path.join(out_dir, filename)
     with open(out_path, 'w') as f:
         json.dump(result, f, indent=4)

@@ -15,6 +15,38 @@ import pytz
 import h5py
 import math
 
+# ---------------------------------------------------------------------------
+# HDF5 key helpers  (mirrors tdc.py)
+# ---------------------------------------------------------------------------
+
+def _lmg_key(driver, pwm, coarse, fine, temp):
+    return f'{driver}/{pwm}/{coarse}-{fine}/{temp}C'
+
+
+def _kapu_key(driver, pwm, mode, temp):
+    return f'{driver}/{pwm}/{mode}/{temp}C'
+
+
+def _build_key(diode, driver, pwm, coarse, fine, mode, temp):
+    if 'LMG' in diode:
+        return _lmg_key(driver, pwm, coarse, fine, temp)
+    return _kapu_key(driver, pwm, mode, temp)
+
+
+def _resolve_target(h5file, diode, pwm, coarse, fine, mode, temp):
+    """Try target '1', fall back to '2'. Return (target_str, driver_str)."""
+    prefix = 'lmg' if 'LMG' in diode else 'kapu'
+    for t in ('1', '2'):
+        driver = prefix + t
+        key    = _build_key(diode, driver, pwm, coarse, fine, mode, temp)
+        try:
+            _ = h5file[key]
+            return t, driver
+        except KeyError:
+            continue
+    raise KeyError(f'No data found for {diode} at {temp}°C '
+                   f'(tried both targets) in {h5file.filename}')
+
 
 # ---------------------------------------------------------------------------
 # Correction data (air/ice transmission curves) — loaded from files.
@@ -22,15 +54,6 @@ import math
 
 X_PRE, Y_PRE       = np.loadtxt('files/data_pre.txt',    unpack=True)
 X_VALUES, Y_VALUES  = np.loadtxt('files/data_values.txt', unpack=True)
-
-
-# ---------------------------------------------------------------------------
-# Sigmoid
-# ---------------------------------------------------------------------------
-
-def sigmoid(x, k, w, x0, y0):
-    """Sigmoid function used for air/ice correction curve fitting."""
-    return k / (1.0 + np.exp(-w * (x - x0))) + y0
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +79,6 @@ def fit_correction_curves(x_pre=X_PRE, y_pre=Y_PRE,
     popt_air, _ = curve_fit(sigmoid, x_air, y_air, p0=p0, maxfev=1000)
     popt_ice, _ = curve_fit(sigmoid, x_ice, y_ice, p0=p0, maxfev=1000)
     return popt_air, popt_ice
-
 
 def apply_ice_correction(data, angles, popt_ice, popt_air):
     """
@@ -164,6 +186,22 @@ NIST = {
 
 HC = 1.98644586e-25   # h·c  [m³·kg/s²]
 
+# ---------------------------------------------------------------------------
+# Sigmoid
+# ---------------------------------------------------------------------------
+
+def sigmoid(x, k, w, x0, y0):
+    """Sigmoid function used for air/ice correction curve fitting."""
+    return k / (1.0 + np.exp(-w * (x - x0))) + y0
+
+def int_func(x, k, w, x0, y0):
+    """Sigmoid × sin(x) — integrand for solid-angle integration."""
+    return sigmoid(x, k, w, x0, y0) * np.sin(x)
+
+def integrate_sigmoid(popt):
+    """Integrate _int_func from 0 to π."""
+    return scipy.integrate.quad(lambda x: int_func(x, *popt), 0, np.pi)[0]
+
 
 def calc_photons(current, wavelength_m, responsivity, pulse_time, geo_factor):
     """
@@ -182,11 +220,6 @@ def calc_photons(current, wavelength_m, responsivity, pulse_time, geo_factor):
     float — photon count
     """
     return current * pulse_time * wavelength_m * geo_factor / (responsivity * HC)
-
-
-def int_func(x, k, w, x0, y0):
-    """Sigmoid × sin(x) — integrand for solid-angle integration."""
-    return sigmoid(x, k, w, x0, y0) * np.sin(x)
 
 
 def integrate_solid_angle(popt):

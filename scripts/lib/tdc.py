@@ -447,14 +447,19 @@ def compute_and_save(hemisphere, device_id, emitter,
         ],
     }
 
+    if "LMG" in emitter:
+        fname = f'tdc_{pwm}_{temp}C_{coarse}-{fine}.json'
+    if "KAPU" in emitter:
+        fname = f'tdc_{pwm}_{temp}C_{mode}.json'
+        
     out_dir = os.path.join(paths['output'], f'{batch}',
                                 f'pocam_{device_id}',
                                 f'hem_{hemisphere}',
                                 f'{emitter}')
     
     os.makedirs(os.path.dirname(out_dir), exist_ok=True)  
-    filename = f'tdc_{temp}C.json'
-    out_path = os.path.join(out_dir, filename)
+    out_path = os.path.join(out_dir, fname)
+    
     with open(out_path, 'w') as f:
         json.dump(result, f, indent=4)
     print(f'  Saved → {out_path}')

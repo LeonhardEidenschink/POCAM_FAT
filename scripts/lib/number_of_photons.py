@@ -242,21 +242,26 @@ class AngularCalibration:
 
     _NSIDE = 2 ** 2
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, batch):
+        
         self.data = h5.File(file_path, 'r+')
         self.result = {}
         try:
             self.hemisphere_sn = self.data['meta'].attrs['AB_SN']
         except KeyError:
             print('  WARNING: no metadata accessible')
-
-        # Pre-compute HEALPix grid
-        ipix         = hp.query_strip(self._NSIDE, np.radians(0), np.radians(150))
-        deg          = np.degrees(hp.pix2ang(nside=self._NSIDE, ipix=ipix))
-        self.zenith  = np.round(deg[0], 2)
-        self.azimuth = np.round(deg[1], 2)
-        self.zeniths = np.unique(self.zenith)
-        self.indices = np.where(np.diff(self.azimuth) < 0)[0]
+        if batch == 'batch2':
+            # Pre-compute HEALPix grid
+            ipix         = hp.query_strip(self._NSIDE, np.radians(0), np.radians(150))
+            deg          = np.degrees(hp.pix2ang(nside=self._NSIDE, ipix=ipix))
+            self.zenith  = np.round(deg[0], 2)
+            self.azimuth = np.round(deg[1], 2)
+            self.zeniths = np.unique(self.zenith)
+            self.indices = np.where(np.diff(self.azimuth) < 0)[0]
+        if batch == 'batch1':
+            self.zenith=self.data['meta'].attrs['u_zenith']
+            self.azimuth=self.data['meta'].attrs['u_azimuth']
+            
 
     def pulse_time(self):
         return float(self.data['meta'].attrs['PulseTime']) * 1e-6
@@ -264,18 +269,24 @@ class AngularCalibration:
     def distance(self):
         return float(self.data['LMG405'].attrs['distance'])
 
-    def curr(self, key):
+    def curr_batch2(self, key):
         arr    = np.array(self.data.get(key))
         y      = arr[2] * 1e12
         y_err  = arr[3] * 1e12
-        chunks = np.split(y,     self.indices + 1)
-        cerrs  = np.split(y_err, self.indices + 1)
+        chunks = np.split(y ,     self.indices + 1)
+        cerrs  = np.split(y_err , self.indices + 1)
         y1 = [np.mean(c) for c in chunks]
         y2 = [np.sqrt(np.std(c)**2 + np.mean(np.array(e)**2))
               for c, e in zip(chunks, cerrs)]
         return np.array([y1]), np.array(y2)
+    
+    def curr_batch1(self, key):
+        arr = np.array(self.data.get(key))
+        self.y1 = arr[2]*1e12
+        self.y2 = arr[3]*1e12
+        return np.array([self.y1, self.y2])
 
-    def zero(self, key):
+    def zero(self, key):        
         return self.data[key].attrs['zero_data'][0]
 
     def close(self):
@@ -298,20 +309,33 @@ def photons_baseline(hemisphere, diode, batch, base_path):
     popt_air, popt_ice = fit_correction_curves()
 
     file_path = base_path.format(batch = batch, hem=hemisphere)
-    hem = AngularCalibration(file_path + f'cali_flange_{hemisphere}')
+    hem = AngularCalibration(file_path + f'cali_flange_{hemisphere}', batch)
+    
+    if batch == 'batch1':
+        y, y_err = hem.curr_batch1(diode)
+        y_norm = y[0][0]
+        val    = np.array(y[:,0]) / y_norm
+        zenith = hem.zenith * np.pi / 180   # radians
+        
+        values = apply_ice_correction(val, zenith, popt_ice, popt_air)
+        sim_mismatch      = 0.025
+        data_points_err   = np.sqrt((y_err[:,0] * 1e-12)**2 + (values * sim_mismatch)**2)
+        
+        popt, pcov = curve_fit(sigmoid, zenith, values,
+                           p0=[1.1, -5.0, 1.5, -0.005], maxfev=1000)
+        pcov = pcov*1e-12
+        y_norm = y_norm*1e-12
+        
+    if batch == 'batch2':
+        y, y_err = hem.curr_batch2(diode)
+        y_norm   = hem.zero(diode)
+        val    = np.array(y[0]) * 1e-12 / y_norm
+        zenith = hem.zeniths * np.pi / 180   # radians
 
-    y, y_err = hem.curr(diode)
-    y_norm   = hem.zero(diode)
-
-    val    = np.array(y[0]) * 1e-12 / y_norm
-    zenith = hem.zeniths * np.pi / 180   # radians
-
-    values = apply_ice_correction(val, zenith, popt_ice, popt_air)
-
-    sim_mismatch      = 0.025
-    data_points_err   = np.sqrt((y_err * 1e-12)**2 + (values * sim_mismatch)**2)
-
-    popt, pcov = curve_fit(sigmoid, zenith, values,
+        values = apply_ice_correction(val, zenith, popt_ice, popt_air)
+        sim_mismatch      = 0.025
+        data_points_err   = np.sqrt((y_err * 1e-12)**2 + (values * sim_mismatch)**2)
+        popt, pcov = curve_fit(sigmoid, zenith, values,
                            p0=[1.1, -5.0, 1.5, -0.005], maxfev=1000)
 
     # Physics constants
@@ -414,7 +438,7 @@ class NumberOfPhotons:
             batch=batch, base_path=base_path)
         norm_pd         = norm_pd_obj.mean_signal_vals
         norm_pd_rel_err = norm_pd_obj.mean_signal_err / norm_pd
-
+        
         # --- Baseline photon count ---
         baseline, hem = photons_baseline(
             hemisphere=hemisphere, diode=diode,
@@ -527,12 +551,16 @@ def compute_and_save(hemisphere, device_id, emitter,
             },
         ],
     }
-
+    if "LMG" in emitter:
+        fname = f'photons_{pwm}_{temp}C_{coarse}-{fine}.json'
+    if "KAPU" in emitter:
+        fname = f'photons_{pwm}_{temp}C_{mode}.json'
+        
     out_path = os.path.join(paths['output'], f'{batch}',
                                 f'pocam_{device_id}',
                                 f'hem_{hemisphere}',
                                 f'{emitter}',
-                                'photons.json')
+                                fname)
     
     os.makedirs(os.path.dirname(out_path), exist_ok=True)    
 
