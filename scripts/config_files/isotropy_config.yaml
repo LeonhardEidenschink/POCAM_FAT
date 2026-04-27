@@ -20,7 +20,12 @@ settings:
 # Emitters to process for every device listed below.
 # Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
 emitters:
+  - LMG365
+  - LMG405
   - LMG450
+  - LMG520
+  - KAPU405
+  - KAPU465
 
 # Devices: each entry needs an id, two hemispheres, and a batch.    
 devices:
