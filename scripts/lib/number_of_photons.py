@@ -474,73 +474,72 @@ class NumberOfPhotons:
 def _driver_char(diode):
     return 'l' if 'LMG' in diode else 'k'
 
-
-def compute_and_save(hemisphere, device_id, emitter,
-                     pwm, temp, coarse, fine, mode, target,batch,
-                     paths):
+def compute_photons(hemisphere, device_id, emitter,
+                    pwm, temp, coarse, fine, mode, target, batch, paths):
     """
-    Compute photon number and write JSON output file.
-
-    Parameters
-    ----------
-    hemisphere : str   HDF5 hemisphere id
-    device_id  : str   POCAM device number e.g. '016'
-    emitter    : str   e.g. 'LMG405'
-    paths      : dict  with keys 'data', 'output'
-
-    Returns
-    -------
-    dict — assembled emission intensity dictionary
+    Returns just the value_entry dict and metadata — no file I/O.
     """
-    base_path = paths['data']
-    driver    = _driver_char(emitter)
-
     photons = NumberOfPhotons(
         hemisphere=hemisphere, temp=temp, diode=emitter, pwm=pwm,
         coarse=coarse, fine=fine, mode=mode,
-        batch=batch, base_path=base_path)
+        batch=batch, base_path=paths['data'])
 
-    # Resolve target label
     target_label = 'master' if photons.target == '1' else 'slave'
+    driver = _driver_char(emitter)
 
     value_entry = {
         'data_format': 'value',
-        'value':        round(photons.final_numbers['emitted_photons_pd'], 2),
-        'error':        round(photons.final_numbers['emitted_photons_pd_rel_err'], 4),
-        'power':        photons.pwm,
-        'temperature':  photons.temp,
-        'label':        'Number-of-Emitted-Photons-per-Pulse',
+        'value':       round(photons.final_numbers['emitted_photons_pd'], 2),
+        'error':       round(photons.final_numbers['emitted_photons_pd_rel_err'], 4),
+        'power':       pwm,
+        'temperature': temp,
+        'label':       'Number-of-Emitted-Photons-per-Pulse',
     }
     if 'LMG' in emitter:
-        value_entry['coarse'] = photons.coarse
-        value_entry['fine']   = photons.fine
+        value_entry['coarse'] = coarse
+        value_entry['fine']   = fine
     else:
-        value_entry['mode'] = photons.mode
+        value_entry['mode'] = mode
 
-    mean_rel_err = round(photons.final_numbers['emitted_photons_pd_mean_rel_err'], 3)
+    meta = {
+        'date':         photons.date,
+        'meas_time':    photons.meas_time,
+        'target_label': target_label,
+        'driver':       driver,
+        'mean_rel_err': round(photons.final_numbers['emitted_photons_pd_mean_rel_err'], 3),
+    }
+    return value_entry, meta
+
+
+def save_emitter_json(hemisphere, device_id, emitter,
+                      batch, meas_data_list, meta, paths):
+    """
+    Writes one JSON file containing all meas_data entries for this emitter.
+    meta is taken from the first successful measurement.
+    """
+    driver = _driver_char(emitter)
 
     result = {
-        'device_uid':    f'pocam-{photons.date}_{device_id}',
-        'subdevice_uid': f'pocam-led-{target_label}_{driver}-{emitter[-3:]}_{device_id}',
+        'device_uid':    f'pocam-{meta["date"]}_{device_id}',
+        'subdevice_uid': f'pocam-led-{meta["target_label"]}_{driver}-{emitter[-3:]}_{device_id}',
         'meas_name':     'led-number-of-emitted-photons',
         'meas_class':    'display',
         'meas_stage':    'calibration',
         'meas_group':    'luminosity',
         'meas_site':     'tum',
-        'meas_time':     photons.meas_time,
-        'meas_data':     [value_entry],
+        'meas_time':     meta['meas_time'],
+        'meas_data':     meas_data_list,    # <-- full list here
         'comments': [
-            "Total emitted photons per pulse for this hemisphere over the full solid angle "
-            "at the given conditions.",
-            "Value based on repeated PD light-output measurements.",
-            f"Mean relative error for multi-pulse runs: {mean_rel_err}",
+            f"Total emitted photons per pulse for hemisphere {hemisphere} "
+            f"in POCAM {device_id} over the full solid angle.",
+            f"Mean relative error for multi-pulse runs: {meta['mean_rel_err']}",
         ],
         'support_files': [
             {
                 'filetype': 'hdf5',
                 'hostname': 'data.icecube.wisc.edu',
                 'pathname': f'/data/exp/IceCubeUpgrade/commissioning/pocam/'
-                            f'pocam_{device_id}/{target_label}_hemisphere/{emitter}',
+                            f'pocam_{device_id}/{meta["target_label"]}_hemisphere/{emitter}',
                 'comment':  'Raw HDF5 data. See POCAM documentation for details.',
             },
             {
@@ -551,21 +550,14 @@ def compute_and_save(hemisphere, device_id, emitter,
             },
         ],
     }
-    if "LMG" in emitter:
-        fname = f'photons_{pwm}_{temp}C_{coarse}-{fine}.json'
-    if "KAPU" in emitter:
-        fname = f'photons_{pwm}_{temp}C_{mode}.json'
-        
-    out_path = os.path.join(paths['output'], f'{batch}',
-                                f'pocam_{device_id}',
-                                f'hem_{hemisphere}',
-                                f'{emitter}',
-                                fname)
-    
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)    
 
+    out_path = os.path.join(paths['output'], f'{batch}',
+                            f'pocam_{device_id}',
+                            f'hem_{hemisphere}',
+                            f'{emitter}',
+                            'photons.json')       # one file per emitter
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'w') as f:
         json.dump(result, f, indent=4)
     print(f'  Saved → {out_path}')
-
     return result

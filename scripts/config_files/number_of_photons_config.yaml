@@ -9,19 +9,24 @@ paths:
   output:      ../output/
 
 # Measurement settings
+# Measurement settings
 settings:
-  temp:   0         # temperature [°C]  (use 25 for baseline)
-  pwm:    54000     # power [a.u.]
-  coarse: 1         # LMG coarse setting
-  fine:   20        # LMG fine setting
-  mode:   default   # KAPU mode: 'default' or 'fast'
+  temps:   [0, -10, -20, -30, -40, 25]        # temperature [°C]  (use 25 for baseline)
+  pwms:    [7500, 10000, 15000, 20000, 25000, 30000, 35000, 45000, 54000]     # power [a.u.]
+  lmg_coarse_fine: [[1,10],[1,20],[1,40],[2,20]]  # LMG coarse and fine settings     
+  kapu_modes:   [default, fast]   # KAPU mode: 'default' or 'fast'
   target: None      # 'master', 'slave', or 'None' (auto-detected from data)
 
 # Emitters to process for every hemisphere listed below.
 # Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
 emitters:
+  - LMG365
   - LMG405
-
+  - LMG450
+  - LMG520
+  - KAPU405
+  - KAPU465
+  
 # Hemispheres to process.
 # Each entry needs:
 #   hemisphere  : HDF5 file id (the directory/file name suffix)
