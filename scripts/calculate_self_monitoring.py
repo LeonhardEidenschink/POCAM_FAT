@@ -12,8 +12,9 @@ Usage
 
 import sys
 import yaml
-sys.path.append('lib')  # Ensure lib/ is in the path for imports
-from self_monitoring import compute_and_save
+import os 
+sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))  # Ensure lib/ is in the path for imports
+from self_monitoring import compute_self_monitoring, save_emitter_json
 
 
 def load_config(path):
@@ -45,11 +46,13 @@ if __name__ == '__main__':
         batch      = hem_entry['batch']
 
         for emitter in emitters:
+            print(f'\n[hem {hemisphere} | device {device_id} | {emitter}]')
+            meas_data_list = []
+            meta = None
+
             for temp in temperatures:
-                print(f'[hem {hemisphere}  |  device {device_id}  '
-                      f'|  {emitter}  |  {temp}°C]')
                 try:
-                    result = compute_and_save(
+                    entries, m = compute_self_monitoring(
                         hemisphere = hemisphere,
                         device_id  = device_id,
                         emitter    = emitter,
@@ -60,14 +63,19 @@ if __name__ == '__main__':
                         mode       = s['mode'],
                         paths      = paths,
                         batch      = batch,
-                        target     = s.get('target'),   # None = auto-detect
+                        target     = s.get('target'),
                     )
-                    n_ph     = result['meas_data'][0]['value']
-                    n_ph_err = result['meas_data'][0]['error']
-                    print(f'  Photons (PD): {n_ph:.3e} ± {n_ph_err:.3e}')
-                    results[(hemisphere, emitter, temp)] = result
-
+                    meas_data_list.extend(entries)   # extend, not append
+                    if meta is None:
+                        meta = m
+                    print(f'  temp={temp}°C → '
+                        f'{entries[0]["value"]:.3e} photons '
+                        f'(rel err: {entries[0]["rel_error"]:.4f})')
                 except Exception as e:
-                    print(f'  ERROR: {e}')
+                    print(f'  SKIP temp={temp}°C: {e}')
 
-    print(f'\nDone. Processed {len(results)} / {total} combinations.')
+            if meas_data_list:
+                save_emitter_json(hemisphere, device_id, emitter,
+                                batch, meas_data_list, meta, paths)
+            else:
+                print('  WARNING: no successful measurements — no JSON written')

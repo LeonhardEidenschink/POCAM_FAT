@@ -42,6 +42,8 @@ from pocam_utils import (
     _kapu_key,
     _build_key,
     _resolve_target,
+    format_date,
+    datetime_to_unix
 )
 
 
@@ -183,7 +185,7 @@ class SinglePMTData:
                 right_zeros = np.where(sig[peak_idx + 1:] == 0)[0]
                 end         = right_times[np.min(right_zeros)]
 
-                integrated  = scipy.integrate.quad(interp, start, end)[0]
+                integrated  = scipy.integrate.quad(interp, start, end, limit=200)[0]
 
                 # Trigger rising edge: first sample >= threshold
                 j = 0
@@ -350,42 +352,21 @@ class SingleAngularCalData:
 # ---------------------------------------------------------------------------
 # compute_and_save
 # ---------------------------------------------------------------------------
-
-def compute_and_save(hemisphere, device_id, emitter,
-                     pwm, temp, coarse, fine, mode,
-                     paths, batch,
-                     target=None):
+def compute_self_monitoring(hemisphere, device_id, emitter,
+                             pwm, temp, coarse, fine, mode,
+                             paths, batch, target=None):
     """
-    Compute self-monitoring intensity and photon number for one combination,
-    then write a JSON output file.
-
-    Parameters
-    ----------
-    hemisphere : str   HDF5 hemisphere id  e.g. '03'
-    device_id  : str   POCAM device number e.g. '02'
-    emitter    : str   e.g. 'LMG405'
-    pwm        : int   power setting
-    temp       : int   temperature [°C]
-    coarse     : int   LMG coarse setting
-    fine       : int   LMG fine setting
-    mode       : str   KAPU mode
-    paths      : dict  keys: 'data', 'output', 'cal_prefix'
-    batch      : str   e.g. 'batch2'
-    target     : str or None   '1' or '2'; None = auto-detect from HDF5
-
-    Returns
-    -------
-    dict — assembled result dictionary
+    Compute self-monitoring photon number for one (hemisphere, emitter, temp)
+    combination. Returns (meas_data_entries, meta) — no file I/O.
     """
     base_path  = paths['data']
     cal_prefix = paths.get('cal_prefix', 'cali_flange_')
 
-    # ---- Auto-detect target if not specified ----
+    # ---- Auto-detect target ----
     if target is None:
-        h5_path = base_path.format(batch =batch, hem=hemisphere)
-        h       = h5.File(h5_path + emitter, 'r')
+        h5_path = base_path.format(batch=batch, hem=hemisphere)
+        h = h5.File(h5_path + emitter, 'r')
         target, _ = _resolve_target(h, emitter, pwm, coarse, fine, mode, temp)
-        print(target)
         h.close()
 
     target_label = 'master' if target == '1' else 'slave'
@@ -393,79 +374,55 @@ def compute_and_save(hemisphere, device_id, emitter,
     # ---- PD signal at requested conditions ----
     pd_data = SinglePDData(
         hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-        target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
-        base_path=base_path)
+        target=target, coarse=coarse, fine=fine, mode=mode,
+        batch=batch, base_path=base_path)
 
-    # ---- PD signal at baseline conditions (25 °C, max power, default shape) ----
+    # ---- PD signal at baseline (25°C, max power) ----
     pd_norm = SinglePDData(
         hemisphere=hemisphere, pwm=54000, temp=25, diode=emitter,
-        target=target, coarse=1, fine=20, mode='default', batch=batch,
-        base_path=base_path)
+        target=target, coarse=1, fine=20, mode='default',
+        batch=batch, base_path=base_path)
 
-    # ---- Angular calibration + baseline photon number ----
+    # ---- Angular calibration (only needed once per emitter, but kept here
+    #      for simplicity — caller can cache if performance matters) ----
     cal = SingleAngularCalData(
         hemisphere=hemisphere, diode=emitter, batch=batch,
         base_path=base_path, cal_prefix=cal_prefix)
+
+    # ---- Extract date and meas_time from HDF5 metadata ----
+    h5_path = base_path.format(batch=batch, hem=hemisphere)
+    h = h5.File(h5_path + emitter, 'r')
+    if 'LMG' in emitter:
+        meta_key = f'{pd_data.driver}/{54000}/1-20/25C/metadata'
+    else:
+        meta_key = f'{pd_data.driver}/{54000}/default/25C/metadata'
+    dt_str = h[meta_key].attrs.get('datetime')
+    h.close()
+    date      = format_date(dt_str)
+    meas_time = datetime_to_unix(dt_str)
 
     # ---- Scale photons from PD ratio ----
     pd_ratio           = pd_data.mean_signal_vals / pd_norm.mean_signal_vals
     emitted_photons_pd = max(0.0, pd_ratio * cal.photons)
 
-    pd_rel_err   = pd_data.mean_signal_err  / pd_data.mean_signal_vals
-    norm_rel_err = pd_norm.mean_signal_err  / pd_norm.mean_signal_vals
+    pd_rel_err   = pd_data.mean_signal_err / pd_data.mean_signal_vals
+    norm_rel_err = pd_norm.mean_signal_err / pd_norm.mean_signal_vals
 
     pd_rel_total = np.sqrt(pd_rel_err**2
                            + norm_rel_err**2
                            + cal.rel_stat_error**2
                            + cal.rel_sys_error**2)
-    pd_mean_rel_total = np.sqrt((pd_rel_err / np.sqrt(100))**2
-                                + (norm_rel_err / np.sqrt(100))**2
-                                + cal.mean_rel_stat_error**2
-                                + cal.mean_rel_sys_error**2)
 
-    # ---- PMT cross-calibration (best-effort) ----
-    emitted_photons_pmt = None
-    try:
-        pmt_data = SinglePMTData(
-            hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-            target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
-            base_path=base_path)
-        data_pmt_mean = float(np.mean(pmt_data.processed_data['integrated_signal']))
-
-        # Find highest PMT power that stays below saturation (<4500 mV peak)
-        norm_pwm = 54000
-        for try_pwm in [54000, 45000, 35000, 30000, 25000, 20000, 15000, 10000, 7500]:
-            norm_pmt_obj = SinglePMTData(
-                hemisphere=hemisphere, pwm=try_pwm, temp=temp, diode=emitter, batch=batch,
-                target=target, coarse=1, fine=20, mode='default',
-                base_path=base_path)
-            if np.max(norm_pmt_obj.processed_data['peak']) < 4500:
-                norm_pwm = try_pwm
-                break
-        norm_pmt_mean = float(np.mean(norm_pmt_obj.processed_data['integrated_signal']))
-
-        norm_pd_cross = SinglePDData(
-            hemisphere=hemisphere, pwm=norm_pwm, temp=temp, diode=emitter,
-            target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
-            base_path=base_path).mean_signal_vals
-
-        emitted_photons_pmt = ((data_pmt_mean / norm_pmt_mean)
-                               * (norm_pd_cross / pd_norm.mean_signal_vals)
-                               * cal.photons)
-
-    except Exception as e:
-        print(f'  PMT cross-calibration skipped — {e}')
-
-    # ---- Assemble result entries ----
+    # ---- Build PD entry ----
     pd_entry = {
-        'data_format': 'value',
-        'value':        round(emitted_photons_pd),
-        'error':        round(emitted_photons_pd * pd_rel_total),
-        'rel_error':    round(pd_rel_total, 4),
-        'power':        pwm,
-        'temperature':  temp,
-        'label':        'N_photons_PD',
-        'title':        'Estimated Number of Emitted Photons per Pulse (PD)',
+        'data_format': 'value', 
+        'value':       round(emitted_photons_pd),
+        'error':       round(emitted_photons_pd * pd_rel_total),
+        'rel_error':   round(pd_rel_total, 4),
+        'power':       pwm,
+        'temperature': temp,
+        'label':       'N_photons_PD',
+        'title':       'Estimated Number of Emitted Photons per Pulse (PD)',
     }
     if 'LMG' in emitter:
         pd_entry['coarse'] = coarse
@@ -473,73 +430,128 @@ def compute_and_save(hemisphere, device_id, emitter,
     else:
         pd_entry['mode'] = mode
 
-    meas_data = [pd_entry]
+    entries = [pd_entry]
 
-    if emitted_photons_pmt is not None:
-        pmt_entry = {
-            'data_format': 'value',
-            'value':        round(emitted_photons_pmt),
-            'power':        pwm,
-            'temperature':  temp,
-            'label':        'N_photons_PMT',
-            'title':        'Estimated Number of Emitted Photons per Pulse (PMT cross-cal)',
-        }
-        if 'LMG' in emitter:
-            pmt_entry['coarse'] = coarse
-            pmt_entry['fine']   = fine
-        else:
-            pmt_entry['mode'] = mode
-        meas_data.append(pmt_entry)
+    # ---- PMT cross-calibration (best-effort) ----
+    try:
+        pmt_data = SinglePMTData(
+            hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
+            target=target, coarse=coarse, fine=fine, mode=mode,
+            batch=batch, base_path=base_path)
+        data_pmt_mean = float(np.mean(
+            pmt_data.processed_data['integrated_signal']))
 
-    comments = [
-        'Estimated total number of emitted photons per pulse.',
-        'Method: PD picoamp signal ratio × angular-integration baseline.',
-        'Baseline derived from flange-calibration HDF5 data.',
-        'Air-to-ice correction applied via pre-measured sigmoid model.',
-        'Errors: systematic (distance, NIST resp., point-source approx.) '
-        'and statistical (MC integration, signal noise, sim. mismatch).',
-        f'Hemisphere SN: {cal.hemisphere_sn}',
-        f'Pulse duration: {cal.pulse_time_s * 1e6:.3f} µs',
-        'Structure of device_uid: pocam-{date}_{device_number}',
-    ]
+        # Find highest PMT power below saturation
+        norm_pmt_obj = None
+        for try_pwm in [54000, 45000, 35000, 30000, 25000,
+                        20000, 15000, 10000, 7500]:
+            candidate = SinglePMTData(
+                hemisphere=hemisphere, pwm=try_pwm, temp=temp,
+                diode=emitter, target=target, coarse=1, fine=20,
+                mode='default', batch=batch, base_path=base_path)
+            if np.max(candidate.processed_data['peak']) < 4500:
+                norm_pmt_obj = candidate
+                norm_pwm     = try_pwm
+                break
 
-    driver_char = 'l' if 'LMG' in emitter else 'k'
+        if norm_pmt_obj is not None:
+            norm_pmt_mean = float(np.mean(
+                norm_pmt_obj.processed_data['integrated_signal']))
+
+            # ---- Fixed: use baseline coarse/fine/mode for norm PD ----
+            norm_pd_cross = SinglePDData(
+                hemisphere=hemisphere, pwm=norm_pwm, temp=temp,
+                diode=emitter, target=target,
+                coarse=1, fine=20, mode='default',   # baseline settings
+                batch=batch, base_path=base_path).mean_signal_vals
+
+            emitted_photons_pmt = ((data_pmt_mean / norm_pmt_mean)
+                                   * (norm_pd_cross / pd_norm.mean_signal_vals)
+                                   * cal.photons)
+
+            pmt_entry = {
+                'data_format': 'value',
+                'value':       round(emitted_photons_pmt),
+                'power':       pwm,
+                'temperature': temp,
+                'label':       'N_photons_PMT',
+                'title':       'Estimated Number of Emitted Photons per Pulse (PMT cross-cal)',
+            }
+            if 'LMG' in emitter:
+                pmt_entry['coarse'] = coarse
+                pmt_entry['fine']   = fine
+            else:
+                pmt_entry['mode'] = mode
+            entries.append(pmt_entry)
+
+    except Exception as e:
+        print(f'    PMT cross-calibration skipped — {e}')
+
+    # ---- Metadata (used once per emitter to build top-level JSON fields) ----
+    meta = {
+        'date':          date,
+        'meas_time':     meas_time,
+        'target_label':  target_label,
+        'hemisphere_sn': cal.hemisphere_sn,
+        'pulse_time_us': cal.pulse_time_s * 1e6,
+        'driver':        pd_data.driver,
+    }
+
+    return entries, meta
+
+def save_emitter_json(hemisphere, device_id, emitter,
+                      batch, meas_data_list, meta, paths):
+    """
+    Write one JSON file containing all meas_data entries for this
+    hemisphere/emitter combination (all temperatures).
+    """
+    driver_char  = 'l' if 'LMG' in emitter else 'k'
+    target_label = meta['target_label']
+
     result = {
-        'device_uid':    f'pocam-{device_id}',
-        'subdevice_uid': f'pocam-led-{target_label}_{driver_char}-{emitter[-3:]}_{device_id}',
+        'device_uid':    f'pocam-{meta["date"]}_{device_id}',
+        'subdevice_uid': (f'pocam-led-{target_label}_{driver_char}'
+                          f'-{emitter[-3:]}_{device_id}'),
         'meas_name':     'intensity-photon-number',
         'meas_class':    'display',
         'meas_stage':    'calibration',
-        'meas_group':    'intensity',
+        'meas_group':    'luminosity',        # fixed from 'intensity'
         'meas_site':     'tum',
-        'meas_data':     meas_data,
-        'comments':      comments,
+        'meas_time':     meta['meas_time'],   # now present
+        'meas_data':     meas_data_list,      # all temperatures
+        'comments': [
+            f'Estimated total number of emitted photons per pulse for hemisphere {hemisphere} in POCAM {device_id}.',
+            'Method: PD picoamp signal ratio × angular-integration baseline.',
+            'Baseline derived from flange-calibration HDF5 data.',
+            'Air-to-ice correction applied via pre-measured sigmoid model.',
+            f'Hemisphere SN : {meta["hemisphere_sn"]}',
+            f'Pulse duration: {meta["pulse_time_us"]:.3f} µs',
+        ],
         'support_files': [
             {
                 'filetype': 'hdf5',
                 'hostname': 'data.icecube.wisc.edu',
                 'pathname': (f'/data/exp/IceCubeUpgrade/commissioning/pocam/'
                              f'pocam_{device_id}/{target_label}_hemisphere/{emitter}'),
-                'comment':  'Raw HDF5 data. See POCAM documentation for details.',
+                'comment':  'Raw HDF5 data.',
             },
             {
                 'filetype': 'pdf',
                 'hostname': 'data.icecube.wisc.edu',
-                'pathname': '/data/exp/IceCubeUpgrade/commissioning/pocam/POCAM_documentation.pdf',
+                'pathname': ('/data/exp/IceCubeUpgrade/commissioning/'
+                             'pocam/POCAM_documentation.pdf'),
                 'comment':  'POCAM documentation guide.',
             },
         ],
     }
 
-    out_dir = os.path.join(paths['output'], batch,
-                           f'pocam_{device_id}',
-                           f'hem_{hemisphere}',
-                           emitter)
-    os.makedirs(out_dir, exist_ok=True)
-    filename = f'self_monitoring_{temp}C.json'
-    out_path = os.path.join(out_dir, filename)
+    out_path = os.path.join(paths['output'], batch,
+                            f'pocam_{device_id}',
+                            f'hem_{hemisphere}',
+                            emitter,
+                            'self_monitoring.json')   # one file per emitter
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'w') as f:
         json.dump(result, f, indent=4)
     print(f'  Saved → {out_path}')
-
     return result
