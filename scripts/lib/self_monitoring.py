@@ -106,8 +106,10 @@ class SinglePDData:
         key = _build_key(diode, self.driver, pwm, coarse, fine, mode, temp)
 
         self.vals    = np.array(h[key].get('intensity_signal'))
+        print(np.array(h[key].get('intensity_signal')))
         self.bg_vals = np.array(h[key].get('intensity_bg'))
         h.close()
+        
 
         self.mean_bg_vals  = np.mean(self.bg_vals)
         self.std_bg_vals   = np.std(self.bg_vals)
@@ -117,6 +119,7 @@ class SinglePDData:
         self.std_signal_vals   = np.std(signal_vals)
         self.mean_signal_err   = np.sqrt(self.std_signal_vals**2
                                          + self.std_bg_vals**2)
+        
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +386,7 @@ def compute_and_save(hemisphere, device_id, emitter,
     # ---- Auto-detect target if not specified ----
     if target is None:
         h5_path = base_path.format(batch =batch, hem=hemisphere)
+        print(h5_path)
         h       = h5.File(h5_path + emitter, 'r')
         target, _ = _resolve_target(h, emitter, pwm, coarse, fine, mode, temp)
         print(target)
@@ -395,6 +399,7 @@ def compute_and_save(hemisphere, device_id, emitter,
         hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
         target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
         base_path=base_path)
+    print(pd_data)
 
     # ---- PD signal at baseline conditions (25 °C, max power, default shape) ----
     pd_norm = SinglePDData(

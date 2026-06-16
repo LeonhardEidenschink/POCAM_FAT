@@ -13,7 +13,7 @@ Usage
 import sys
 import yaml
 sys.path.append('lib')  # Ensure lib/ is in the path for imports
-from number_of_photons import compute_and_save
+from number_of_photons_fixed import compute_and_save
 
 
 def load_config(path):
@@ -57,9 +57,11 @@ if __name__ == '__main__':
                     paths      = paths,
                     batch      = batch,
                 )
-                n     = result['meas_data'][0]['value']
-                n_err = result['meas_data'][0]['error']
-                print(f'  Photons: {n:.3e}  (rel. err: {n_err:.4f})')
+                n_pd     = result['meas_data'][0]['value']
+                n_pd_err = result['meas_data'][0]['error']
+                n_pmt     = result['meas_data'][1]['value']
+                print(f'  Photons: {n_pd:.3e}  (rel. err: {n_pd_err:.4f}) (from PD)')
+                print(f'  Photons: {n_pmt:.3e} (from PMT)')
                 results[(hemisphere, emitter)] = result
 
             except Exception as e:

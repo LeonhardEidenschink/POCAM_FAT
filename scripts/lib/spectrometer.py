@@ -400,8 +400,12 @@ def compute_and_save(hemisphere, device_id, emitter,
                                 f'hem_{hemisphere}',
                                 f'{emitter}')
     
-    os.makedirs(os.path.dirname(out_dir), exist_ok=True)  
-    filename = f'spec_{temp}C.json'
+    os.makedirs(os.path.dirname(out_dir), exist_ok=True) 
+    if 'KAPU' in emitter:
+        filename = f'spec_{temp}C_{mode}.json'
+    else:
+        filename = f'spec_{temp}C_{coarse}_{fine}.json'
+        
     out_path = os.path.join(out_dir, filename)
     with open(out_path, 'w') as f:
         json.dump(result, f, indent=4)
