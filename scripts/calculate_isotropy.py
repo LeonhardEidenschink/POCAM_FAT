@@ -57,9 +57,11 @@ if __name__ == '__main__':
                     target      = s['target'],
                     paths       = paths,
                 )
-                iso_val = result['meas_data'][1]['value']
+                isotropy_value_central_68 = result['meas_data'][1]['value_central_68']
+                isotropy_value_min_max= result['meas_data'][1]['value_min_max']
                 iso_err = result['meas_data'][1]['error']
-                print(f'  Isotropy: {iso_val:.3f} ± {iso_err:.3f}')
+                print(f'  Isotropy: {isotropy_value_min_max:.3f} ± {iso_err:.3f} (min-max range)')
+                print(f'  Isotropy: {isotropy_value_central_68:.3f} (center of central quantile)')
                 results[(device_id, emitter)] = result
 
             except Exception as e:

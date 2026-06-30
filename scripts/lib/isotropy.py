@@ -95,7 +95,7 @@ class IsotropyBatch1:
         y_total     = y1   + np.flip(y2)
         y_total_err = err1 + np.flip(err2)
 
-        self.y_values, _, self.isotropy_value, self.isotropy_error = \
+        self.y_values, _, self.isotropy_value_min_max, self.isotropy_value_central_68, self.isotropy_error = \
             compute_isotropy(y_total, y_total_err)
         self.y_values = self.y_values.tolist()
 
@@ -162,7 +162,7 @@ class IsotropyBatch2:
         y_total     = y1  + np.flip(y2)
         y_total_err = ye1 + np.flip(ye2)
 
-        self.y_values, _, self.isotropy_value, self.isotropy_error = \
+        self.y_values, _, self.isotropy_value_min_max, self.isotropy_value_central_68, self.isotropy_error = \
             compute_isotropy(y_total, y_total_err)
         self.y_values = self.y_values.tolist()
 
@@ -203,7 +203,8 @@ def _build_grid_values(iso, batch, coarse, fine, mode, pwm, temp):
 def _build_value_entry(iso, coarse, fine, mode, pwm, temp):
     ve = {
         'data_format': 'value',
-        'value':        round(iso.isotropy_value, 3),
+        'value_min_max':        round(iso.isotropy_value_min_max, 3),
+        'value_central_68': round(iso.isotropy_value_central_68, 3),
         'error':        round(iso.isotropy_error, 3),
         'power':        pwm,
         'temperature':  temp,

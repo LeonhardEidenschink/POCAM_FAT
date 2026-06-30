@@ -164,10 +164,11 @@ def compute_isotropy(y_total, y_total_err):
     i_max = np.unravel_index(np.argmax(y_norm), y_norm.shape)
     i_min = np.unravel_index(np.argmin(y_norm), y_norm.shape)
 
-    isotropy     = (y_norm[i_max] - y_norm[i_min]) / 2
+    isotropy_old     = (y_norm[i_max] - y_norm[i_min]) / 2
+    isotropy_new     = (np.quantile(y_norm,84) - np.quantile(y_norm,16)) / 2
     isotropy_err = np.sqrt(y_norm_err[i_max] ** 2 + y_norm_err[i_min] ** 2) / 2
 
-    return y_norm, y_norm_err, float(isotropy), float(isotropy_err)
+    return y_norm, y_norm_err, float(isotropy_old),float(isotropy_new), float(isotropy_err)
 
 
 # ---------------------------------------------------------------------------
