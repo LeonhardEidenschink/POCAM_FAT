@@ -26,6 +26,9 @@ import scipy.interpolate
 from numpy.random import multivariate_normal
 from scipy.optimize import curve_fit
 import healpy as hp
+from scipy.interpolate import UnivariateSpline
+from sklearn.isotonic import IsotonicRegression
+
 
 from pocam_utils import (
     X_PRE, 
@@ -48,6 +51,8 @@ from POCAMSiPMHandler import breakdown_func, baseline, ampl
 
 from pcm_monitoring_func import decode_value, get_timestamps, getADCreadings, extract_per_pwm, convert_to_perTrig, get_SiPM_dt
 
+def linear(x, a, b):
+    return a*x + b
 
 def read_self_monitoring_file(filename):
     """
@@ -131,6 +136,46 @@ def self_monitoring_analysis(hemisphere, device_id, emitter, temp, paths, batch)
 
     filepath = 
     data_dict = read_self_monitoring_file(filepath)
+
+    pwm, val_pd = cross_check_absolute_calibration(hemisphere, device_id, emitter, paths['abs_cal_path'])
+
+    mask_pd = np.isin(data_dict[emitter]["pd_data"]['adcA']['flasher_pwm'], pwm)
+    n_pd = data_dict[emitter]["pd_data"]['adcA']['adcA_peak_mean'][mask_pd]
+
+    mask_sipm = np.isin(data_dict[emitter]["sipm_data"]['tdc2']['flasher_pwm'], pwm)
+    n_sipm = data_dict[emitter]["sipm_data"]['tdc2']['tdc2_peak_mean'][mask_sipm]
+
+    fit_results = {}
+    #make a linear fit of the pd data and save the fit parameters and the errors in a dictionary
+    popt_pd, pcov_pd = curve_fit(linear, pwm, n_pd)
+    fit_results['pd'] = {'pwm': pwm,
+                        'n_pd': n_pd, 
+                        'slope': popt_pd[0],
+                        'intercept': popt_pd[1],
+                        'slope_error': np.sqrt(pcov_pd[0][0]),
+                        'intercept_error': np.sqrt(pcov_pd[1][1]),
+                        'covariance': pcov_pd,
+                        }
+    
+    #for the sipm data, just spline the data with a logaritmic spline, the data looks like a logarithm so it makes sense 
+    # then, save the value of the spline ar a reference value that I will define somewhere else
+    eps = 1e-9
+    logx = np.log(val_pd + eps)
+
+    spline = UnivariateSpline(logx, n_sipm,
+                                   s=len(logx) * np.var(n_sipm) * SMOOTHING_FACTOR)
+
+    # evaluate on a fine linear-x grid, transformed into log-space
+    x_fine = np.linspace(val_pd.min(), val_pd.max(), 300)
+    logx_fine = np.log(val_pd + eps)
+    y_spline = spline(logx_fine)
+
+    iso = IsotonicRegression(increasing=True)
+    y_fine = iso.fit_transform(x_fine, y_spline)
+
+    
+
+
 
 
 
