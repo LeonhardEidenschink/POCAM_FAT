@@ -1,62 +1,56 @@
 """
 self_monitoring.py
 ==================
-Library for POCAM self-monitoring, intensity (PD / PMT), and photon-number
+Library for POCAM self-monitoring, intensity (PD / SiPM), and fit-parameter
 calculations.
 
 Contains:
-  - SinglePDData          : load and pre-process one PD picoamp dataset
-  - SinglePMTData         : load and pre-process one PMT waveform dataset
-  - SingleAngularCalData  : load flange-calibration data and integrate the
-                            angular emission pattern
-  - compute_and_save      : top-level routine — runs everything for one
-                            hemisphere / emitter / temperature combination
-                            and writes a JSON output file
+  - read_self_monitoring_file        : parse one self-monitoring HDF5 file
+  - cross_check_absolute_calibration : pull (pwm, value) pairs from abs-cal JSONs
+  - self_monitoring_analysis         : PD linear fit + SiPM spline/isotonic fit
+  - compute_and_save                 : top-level routine — runs the analysis for
+                                        one hemisphere / emitter / temperature
+                                        combination and writes a JSON output file
 
 Import this from your run script — do not run directly.
 """
 
+import glob
 import json
 import os
 
 import h5py as h5
 import numpy as np
-import scipy.integrate
-import scipy.interpolate
-from numpy.random import multivariate_normal
 from scipy.optimize import curve_fit
-import healpy as hp
 from scipy.interpolate import UnivariateSpline
 from sklearn.isotonic import IsotonicRegression
 
+# FIXED: this import was dropped in the previous edit, but extract_per_pwm is
+# actually used below in read_self_monitoring_file. Re-added.
+from pcm_monitoring_func import extract_per_pwm
 
-from pocam_utils import (
-    X_PRE, 
-    Y_PRE,
-    X_VALUES, 
-    Y_VALUES,
-    NIST,
-    sigmoid,
-    int_func,
-    integrate_solid_angle,
-    calc_photons,
-    fit_correction_curves,
-    _lmg_key,
-    _kapu_key,
-    _build_key,
-    _resolve_target,
-)
-
-from POCAMSiPMHandler import breakdown_func, baseline, ampl
-
-from pcm_monitoring_func import decode_value, get_timestamps, getADCreadings, extract_per_pwm, convert_to_perTrig, get_SiPM_dt
 
 def linear(x, a, b):
-    return a*x + b
+    return a * x + b
+
+
+def _to_jsonable(obj):
+    """Recursively convert numpy types/arrays to plain Python so json.dump works."""
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating, np.integer)):
+        return obj.item()
+    return obj
+
 
 def read_self_monitoring_file(filename):
     """
-    Read a POCAM self-monitoring HDF5 file and extract all data into a dictionary.
+    Read a POCAM self-monitoring HDF5 file and extract PD/SiPM data for every
+    flasher into a nested dictionary.
 
     Parameters
     ----------
@@ -66,60 +60,84 @@ def read_self_monitoring_file(filename):
     Returns
     -------
     dict
-        Nested dictionary containing all extracted data.
+        data_dict[flasher]['pd_data']['adcA' | 'adcB'][...]
+        data_dict[flasher]['sipm_data']['tdc2'][...]
     """
     f_ = h5.File(filename, 'r')
 
-
     all_data = {}
     for sipm_pwm_ in f_['metadata/sipm_pwm']:
-        all_data[sipm_pwm_]= {}
+        all_data[sipm_pwm_] = {}
         for flm_ in f_['metadata']['flasher_modes']:
-            all_data[sipm_pwm_][flm_.decode()] = extract_per_pwm(f_['flashes/{:d}/{:s}'.format(sipm_pwm_, flm_.decode())])
+            all_data[sipm_pwm_][flm_.decode()] = extract_per_pwm(
+                f_['flashes/{:d}/{:s}'.format(sipm_pwm_, flm_.decode())]
+            )
 
     data_dict = {}
-
+    flasher_pwm = f_['metadata']['flasher_pwm'][()]
+    lmg1_app = '_A'
 
     for flasher in ['lmg0', 'lmg1', 'lmg2', 'lmg3', 'kapu0', 'kapu3']:
-    data_dict[flasher] = {}
-    data_dict[flasher]["sipm_data"] = {}
-    data_dict[flasher]["pd_data"] = {}
-    
-    lmg1_app = '_A'
-    
-    for sipm_pwm_ in f_['metadata']['sipm_pwm'][()]:#[:2]: 
-        if not 'lmg1' in flasher:
-            flasher_pd = flasher
-        elif 'lmg1' in flasher:
-            flasher_pd = flasher + lmg1_app#flasher_pd
-        
-        
-        plotval = np.array([(all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['sum'].mean() - all_data[sipm_pwm_][flasher_pd][0]['adcA']['sum'].mean()) for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
+        data_dict[flasher] = {}
+        data_dict[flasher]["sipm_data"] = {}
+        data_dict[flasher]["pd_data"] = {}
 
-        data_dict[flasher]["pd_data"]['adcA'] = {}
-        data_dict[flasher]["pd_data"]['adcA']['flasher_pwm'] = f_['metadata']['flasher_pwm'][()]
-        data_dict[flasher]["pd_data"]['adcA']['adcA_peak_mean'] = plotval
-        data_dict[flasher]["pd_data"]['adcA']['adcA_peak_std'] = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['peak'].std() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
+        flasher_pd = flasher + lmg1_app if 'lmg1' in flasher else flasher
 
-        plotval = np.array([(all_data[sipm_pwm_][flasher_pd][fpwm_]['adcB']['sum'].mean() - all_data[sipm_pwm_][flasher_pd][0]['adcB']['sum'].mean()) for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
-        
-        data_dict[flasher]["pd_data"]['adcB'] = {}
-        data_dict[flasher]["pd_data"]['adcB']['flasher_pwm'] = f_['metadata']['flasher_pwm'][()]
-        data_dict[flasher]["pd_data"]['adcB']['adcB_peak_mean'] = plotval
-        data_dict[flasher]["pd_data"]['adcB']['adcB_peak_std'] = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['adcB']['peak'].std() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
+        for sipm_pwm_ in f_['metadata']['sipm_pwm'][()]:
+            plotval_a = np.array([
+                all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['sum'].mean()
+                - all_data[sipm_pwm_][flasher_pd][0]['adcA']['sum'].mean()
+                for fpwm_ in flasher_pwm
+            ])
+            data_dict[flasher]["pd_data"]['adcA'] = {
+                'flasher_pwm':      flasher_pwm,
+                'adcA_peak_mean':   plotval_a,
+                'adcA_peak_std':    np.array([
+                    all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['peak'].std()
+                    for fpwm_ in flasher_pwm
+                ]),
+            }
 
-        plotval = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['tdc2_dt'].mean() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
-        data_dict[flasher]["sipm_data"]['tdc2'] = {}
-        data_dict[flasher]["sipm_data"]['tdc2']['flasher_pwm'] = f_['metadata']['flasher_pwm'][()]
-        data_dict[flasher]["sipm_data"]['tdc2']['tdc2_peak_mean'] = plotval
-        data_dict[flasher]["sipm_data"]['tdc2']['tdc2_peak_std'] = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['tdc2_dt'].std() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
+            plotval_b = np.array([
+                all_data[sipm_pwm_][flasher_pd][fpwm_]['adcB']['sum'].mean()
+                - all_data[sipm_pwm_][flasher_pd][0]['adcB']['sum'].mean()
+                for fpwm_ in flasher_pwm
+            ])
+            data_dict[flasher]["pd_data"]['adcB'] = {
+                'flasher_pwm':      flasher_pwm,
+                'adcB_peak_mean':   plotval_b,
+                'adcB_peak_std':    np.array([
+                    all_data[sipm_pwm_][flasher_pd][fpwm_]['adcB']['peak'].std()
+                    for fpwm_ in flasher_pwm
+                ]),
+            }
 
-        return data_dict
+            plotval_tdc2 = np.array([
+                all_data[sipm_pwm_][flasher_pd][fpwm_]['tdc2_dt'].mean()
+                for fpwm_ in flasher_pwm
+            ])
+            data_dict[flasher]["sipm_data"]['tdc2'] = {
+                'flasher_pwm':      flasher_pwm,
+                'tdc2_peak_mean':   plotval_tdc2,
+                'tdc2_peak_std':    np.array([
+                    all_data[sipm_pwm_][flasher_pd][fpwm_]['tdc2_dt'].std()
+                    for fpwm_ in flasher_pwm
+                ]),
+            }
 
-def cross_check_absolute_calibration(hemisphere, device_id, emitter, path_abs_cal):
+    return data_dict
+
+
+def cross_check_absolute_calibration(abs_cal_glob):
+    """Read (pwm, value) pairs from all abs-cal JSON files matching abs_cal_glob."""
     pwm = []
     val_pd = []
-    filelist = glob.glob(path_abs_cal)
+    filelist = glob.glob(abs_cal_glob)
+    if not filelist:
+        raise FileNotFoundError(
+            f'No absolute-calibration files matched pattern: {abs_cal_glob}'
+        )
     for file in filelist:
         with open(file, 'r') as f:
             data = json.load(f)
@@ -127,253 +145,212 @@ def cross_check_absolute_calibration(hemisphere, device_id, emitter, path_abs_ca
             val_pd.append(data['meas_data'][0]['value'])
 
     sorted_idx = np.argsort(pwm)
-    pwm  = np.array(pwm)[sorted_idx]
+    pwm = np.array(pwm)[sorted_idx]
     val_pd = np.array(val_pd)[sorted_idx]
 
     return pwm, val_pd
 
-def self_monitoring_analysis(hemisphere, device_id, emitter, temp, paths, batch):
 
-    filepath = 
-    data_dict = read_self_monitoring_file(filepath)
+def self_monitoring_analysis(emitter, flasher_key, sm_filepath, abs_cal_glob,
+                              smoothing_factor=1.0):
+    """
+    Load one self-monitoring HDF5 file, cross-check against absolute
+    calibration, and return PD linear-fit and SiPM spline/isotonic fit
+    parameters.
 
-    pwm, val_pd = cross_check_absolute_calibration(hemisphere, device_id, emitter, paths['abs_cal_path'])
+    Parameters
+    ----------
+    emitter          : str   device model name, e.g. 'LMG405' — used only to
+                             look up ref_photons and for labeling. NOT a key
+                             into the HDF5 data.
+    flasher_key      : str   hardware flasher-slot key as stored in the
+                             self-monitoring HDF5 file, e.g. 'lmg1', 'kapu0'.
+                             This is DIFFERENT from `emitter`: which physical
+                             LED model sits in which slot varies per
+                             hemisphere/device, so this must be resolved by
+                             the caller (your original pocam_utils helpers
+                             _lmg_key / _kapu_key / _resolve_target look like
+                             they did exactly this — I don't have their
+                             implementation, so I can't reproduce it here).
+    sm_filepath      : str   path to the self-monitoring HDF5 file
+    abs_cal_glob     : str   glob pattern matching absolute-calibration JSON files
+    smoothing_factor : float scales the UnivariateSpline smoothing term `s`
+    """
+    ref_photons = {
+        'LMG365':  2.0e7,
+        'LMG405':  1.0e9,
+        'LMG450':  1.0e9,
+        'LMG520':  1.0e9,
+        'KAPU405': 1.0e8,
+        'KAPU465': 1.0e8,
+    }
 
-    mask_pd = np.isin(data_dict[emitter]["pd_data"]['adcA']['flasher_pwm'], pwm)
-    n_pd = data_dict[emitter]["pd_data"]['adcA']['adcA_peak_mean'][mask_pd]
+    data_dict = read_self_monitoring_file(sm_filepath)
+    pwm, val_pd = cross_check_absolute_calibration(abs_cal_glob)
 
-    mask_sipm = np.isin(data_dict[emitter]["sipm_data"]['tdc2']['flasher_pwm'], pwm)
-    n_sipm = data_dict[emitter]["sipm_data"]['tdc2']['tdc2_peak_mean'][mask_sipm]
+    mask_pd = np.isin(data_dict[flasher_key]["pd_data"]['adcA']['flasher_pwm'], pwm)
+    n_pd = data_dict[flasher_key]["pd_data"]['adcA']['adcA_peak_mean'][mask_pd]
+
+    mask_sipm = np.isin(data_dict[flasher_key]["sipm_data"]['tdc2']['flasher_pwm'], pwm)
+    n_sipm = data_dict[flasher_key]["sipm_data"]['tdc2']['tdc2_peak_mean'][mask_sipm]
 
     fit_results = {}
-    #make a linear fit of the pd data and save the fit parameters and the errors in a dictionary
-    popt_pd, pcov_pd = curve_fit(linear, pwm, n_pd)
-    fit_results['pd'] = {'pwm': pwm,
-                        'n_pd': n_pd, 
-                        'slope': popt_pd[0],
-                        'intercept': popt_pd[1],
-                        'slope_error': np.sqrt(pcov_pd[0][0]),
-                        'intercept_error': np.sqrt(pcov_pd[1][1]),
-                        'covariance': pcov_pd,
-                        }
-    
-    #for the sipm data, just spline the data with a logaritmic spline, the data looks like a logarithm so it makes sense 
-    # then, save the value of the spline ar a reference value that I will define somewhere else
+
+    # --- PD: linear fit ---
+    popt_pd, pcov_pd = curve_fit(linear, val_pd, n_pd)
+    fit_results['pd'] = {
+        'pwm':              pwm,
+        'val_pd':           val_pd,
+        'n_pd':             n_pd,
+        'slope':            popt_pd[0],
+        'intercept':        popt_pd[1],
+        'slope_error':      np.sqrt(pcov_pd[0][0]),
+        'intercept_error':  np.sqrt(pcov_pd[1][1]),
+        'covariance':       pcov_pd,
+    }
+
+    # --- SiPM: log-x spline + isotonic regression ---
     eps = 1e-9
     logx = np.log(val_pd + eps)
+    #sort x and y 
+    logx, n_sipm = zip(*sorted(zip(logx, n_sipm)))
+    spline = UnivariateSpline(
+        logx, n_sipm, s=len(logx) * np.var(n_sipm) * smoothing_factor
+    )
 
-    spline = UnivariateSpline(logx, n_sipm,
-                                   s=len(logx) * np.var(n_sipm) * SMOOTHING_FACTOR)
-
-    # evaluate on a fine linear-x grid, transformed into log-space
     x_fine = np.linspace(val_pd.min(), val_pd.max(), 300)
-    logx_fine = np.log(val_pd + eps)
+    logx_fine = np.log(x_fine + eps)
     y_spline = spline(logx_fine)
 
     iso = IsotonicRegression(increasing=True)
     y_fine = iso.fit_transform(x_fine, y_spline)
 
-    
+    reference_value = np.interp(ref_photons[emitter], x_fine, y_fine)
 
+    fit_results['sipm'] = {
+        'pwm':              pwm,
+        'val_pd':           val_pd,
+        'n_sipm':           n_sipm,
+        'x_fine':           x_fine,
+        'y_fine':           y_fine,
+        'ref_photons':      ref_photons[emitter],
+        'reference_value':  reference_value,
+    }
 
-
+    return fit_results
 
 
 # ---------------------------------------------------------------------------
 # compute_and_save
 # ---------------------------------------------------------------------------
 
-def compute_and_save(hemisphere, device_id, emitter,
-                     temp,
-                     paths, batch,
-                     target=None):
+def compute_and_save(hemisphere, device_id, emitter, flasher_key, temp,
+                      sm_filepath, abs_cal_glob, output_dir, batch,
+                      settings=None, smoothing_factor=1.0):
     """
-    Compute self-monitoring intensity and photon number for one combination,
-    then write a JSON output file.
+    Run the self-monitoring fit analysis for one hemisphere / emitter /
+    temperature combination and write the fit results to a JSON file.
 
     Parameters
     ----------
-    hemisphere : str   HDF5 hemisphere id  e.g. '03'
-    device_id  : str   POCAM device number e.g. '02'
-    emitter    : str   e.g. 'LMG405'
-    pwm        : int   power setting
-    temp       : int   temperature [°C]
-    coarse     : int   LMG coarse setting
-    fine       : int   LMG fine setting
-    mode       : str   KAPU mode
-    paths      : dict  keys: 'data', 'output', 'cal_prefix'
-    batch      : str   e.g. 'batch2'
-    target     : str or None   '1' or '2'; None = auto-detect from HDF5
+    hemisphere    : str   HDF5 hemisphere id, e.g. '03'
+    device_id     : str   POCAM device number, e.g. '002'
+    emitter       : str   device model name, e.g. 'LMG405' (for labeling and
+                          ref_photons lookup only)
+    flasher_key   : str   hardware flasher-slot key in the HDF5 file, e.g.
+                          'lmg1' — see self_monitoring_analysis() docstring;
+                          this must be resolved by the caller, it is NOT
+                          derived from `emitter` automatically.
+    temp          : int   temperature [°C]
+    sm_filepath   : str   path to the self-monitoring HDF5 file for this run
+    abs_cal_glob  : str   glob pattern matching absolute-calibration JSON files
+    output_dir    : str   base output directory (JSON is written under
+                          {output_dir}/{batch}/pocam_{device_id}/hem_{hemisphere}/{emitter}/)
+    batch         : str   e.g. 'batch2'
+    settings      : dict or None
+                    fixed measurement settings from config (pwm, coarse, fine,
+                    mode, target) — recorded as metadata alongside the fit
+                    results for traceability. NOTE: these values are NOT used
+                    in the fit computation itself (pwm/power values are read
+                    from the abs-cal files, not from this dict) — verify that
+                    this is the behavior you want; if 'target' should instead
+                    select between two hemispheres in the HDF5 file, that
+                    logic isn't implemented here and needs to be added.
+    smoothing_factor : float   passed through to the SiPM spline fit
 
     Returns
     -------
-    dict — assembled result dictionary
+    dict — the same dict that gets written to disk
     """
-    base_path  = paths['data']
-    cal_prefix = paths.get('cal_prefix', 'cali_flange_')
+    settings = settings or {}
 
-    # ---- Auto-detect target if not specified ----
-    if target is None:
-        h5_path = base_path.format(batch =batch, hem=hemisphere)
-        print(h5_path)
-        h       = h5.File(h5_path + emitter, 'r')
-        target, _ = _resolve_target(h, emitter, pwm, coarse, fine, mode, temp)
-        print(target)
-        h.close()
+    fit_results = self_monitoring_analysis(
+        emitter, flasher_key, sm_filepath, abs_cal_glob,
+        smoothing_factor=smoothing_factor,
+    )
 
-    target_label = 'master' if target == '1' else 'slave'
-
-    # ---- PD signal at requested conditions ----
-    pd_data = SinglePDData(
-        hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-        target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
-        base_path=base_path)
-    print(pd_data)
-
-    # ---- PD signal at baseline conditions (25 °C, max power, default shape) ----
-    pd_norm = SinglePDData(
-        hemisphere=hemisphere, pwm=54000, temp=25, diode=emitter,
-        target=target, coarse=1, fine=20, mode='default', batch=batch,
-        base_path=base_path)
-
-    # ---- Angular calibration + baseline photon number ----
-    cal = SingleAngularCalData(
-        hemisphere=hemisphere, diode=emitter, batch=batch,
-        base_path=base_path, cal_prefix=cal_prefix)
-
-    # ---- Scale photons from PD ratio ----
-    pd_ratio           = pd_data.mean_signal_vals / pd_norm.mean_signal_vals
-    emitted_photons_pd = max(0.0, pd_ratio * cal.photons)
-
-    pd_rel_err   = pd_data.mean_signal_err  / pd_data.mean_signal_vals
-    norm_rel_err = pd_norm.mean_signal_err  / pd_norm.mean_signal_vals
-
-    pd_rel_total = np.sqrt(pd_rel_err**2
-                           + norm_rel_err**2
-                           + cal.rel_stat_error**2
-                           + cal.rel_sys_error**2)
-    pd_mean_rel_total = np.sqrt((pd_rel_err / np.sqrt(100))**2
-                                + (norm_rel_err / np.sqrt(100))**2
-                                + cal.mean_rel_stat_error**2
-                                + cal.mean_rel_sys_error**2)
-
-    # ---- PMT cross-calibration (best-effort) ----
-    emitted_photons_pmt = None
-    try:
-        pmt_data = SinglePMTData(
-            hemisphere=hemisphere, pwm=pwm, temp=temp, diode=emitter,
-            target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
-            base_path=base_path)
-        data_pmt_mean = float(np.mean(pmt_data.processed_data['integrated_signal']))
-
-        # Find highest PMT power that stays below saturation (<4500 mV peak)
-        norm_pwm = 54000
-        for try_pwm in [54000, 45000, 35000, 30000, 25000, 20000, 15000, 10000, 7500]:
-            norm_pmt_obj = SinglePMTData(
-                hemisphere=hemisphere, pwm=try_pwm, temp=temp, diode=emitter, batch=batch,
-                target=target, coarse=1, fine=20, mode='default',
-                base_path=base_path)
-            if np.max(norm_pmt_obj.processed_data['peak']) < 4500:
-                norm_pwm = try_pwm
-                break
-        norm_pmt_mean = float(np.mean(norm_pmt_obj.processed_data['integrated_signal']))
-
-        norm_pd_cross = SinglePDData(
-            hemisphere=hemisphere, pwm=norm_pwm, temp=temp, diode=emitter,
-            target=target, coarse=coarse, fine=fine, mode=mode, batch=batch,
-            base_path=base_path).mean_signal_vals
-
-        emitted_photons_pmt = ((data_pmt_mean / norm_pmt_mean)
-                               * (norm_pd_cross / pd_norm.mean_signal_vals)
-                               * cal.photons)
-
-    except Exception as e:
-        print(f'  PMT cross-calibration skipped — {e}')
-
-    # ---- Assemble result entries ----
     pd_entry = {
-        'data_format': 'value',
-        'value':        round(emitted_photons_pd),
-        'error':        round(emitted_photons_pd * pd_rel_total),
-        'rel_error':    round(pd_rel_total, 4),
-        'power':        pwm,
-        'temperature':  temp,
-        'label':        'N_photons_PD',
-        'title':        'Estimated Number of Emitted Photons per Pulse (PD)',
+        'data_format':      'fit_linear',
+        'label':            'PD_vs_power',
+        'title':            'PD signal vs. flasher power — linear fit',
+        'power':            fit_results['pd']['pwm'],
+        'value':            fit_results['pd']['n_pd'],
+        'slope':            fit_results['pd']['slope'],
+        'intercept':        fit_results['pd']['intercept'],
+        'slope_error':      fit_results['pd']['slope_error'],
+        'intercept_error':  fit_results['pd']['intercept_error'],
+        'covariance':       fit_results['pd']['covariance'],
+        'temperature':      temp,
     }
-    if 'LMG' in emitter:
-        pd_entry['coarse'] = coarse
-        pd_entry['fine']   = fine
-    else:
-        pd_entry['mode'] = mode
 
-    meas_data = [pd_entry]
+    sipm_entry = {
+        'data_format':      'fit_spline_isotonic',
+        'label':            'SiPM_vs_power',
+        'title':            'SiPM signal vs. abs-cal PD value — spline + isotonic fit',
+        'power':            fit_results['sipm']['pwm'],
+        'val_pd':           fit_results['sipm']['val_pd'],
+        'value':            fit_results['sipm']['n_sipm'],
+        'x_fine':           fit_results['sipm']['x_fine'],
+        'y_fine':           fit_results['sipm']['y_fine'],
+        'ref_photons':      fit_results['sipm']['ref_photons'],
+        'reference_value':  fit_results['sipm']['reference_value'],
+        'temperature':      temp,
+    }
 
-    if emitted_photons_pmt is not None:
-        pmt_entry = {
-            'data_format': 'value',
-            'value':        round(emitted_photons_pmt),
-            'power':        pwm,
-            'temperature':  temp,
-            'label':        'N_photons_PMT',
-            'title':        'Estimated Number of Emitted Photons per Pulse (PMT cross-cal)',
-        }
-        if 'LMG' in emitter:
-            pmt_entry['coarse'] = coarse
-            pmt_entry['fine']   = fine
-        else:
-            pmt_entry['mode'] = mode
-        meas_data.append(pmt_entry)
+    meas_data = [pd_entry, sipm_entry]
 
     comments = [
-        'Estimated total number of emitted photons per pulse.',
-        'Method: PD picoamp signal ratio × angular-integration baseline.',
-        'Baseline derived from flange-calibration HDF5 data.',
-        'Air-to-ice correction applied via pre-measured sigmoid model.',
-        'Errors: systematic (distance, NIST resp., point-source approx.) '
-        'and statistical (MC integration, signal noise, sim. mismatch).',
-        f'Hemisphere SN: {cal.hemisphere_sn}',
-        f'Pulse duration: {cal.pulse_time_s * 1e6:.3f} µs',
-        'Structure of device_uid: pocam-{date}_{device_number}',
+        'PD entry: linear fit of PD picoamp signal vs. flasher power setting.',
+        'SiPM entry: log-x smoothing spline + isotonic regression of SiPM '
+        'signal vs. absolute-calibration PD value; reference_value is the '
+        'isotonic curve evaluated at ref_photons for this emitter.',
+        f'Configured settings (metadata only, not used in fit): {settings}',
     ]
 
-    driver_char = 'l' if 'LMG' in emitter else 'k'
     result = {
         'device_uid':    f'pocam-{device_id}',
-        'subdevice_uid': f'pocam-led-{target_label}_{driver_char}-{emitter[-3:]}_{device_id}',
-        'meas_name':     'intensity-photon-number',
+        'emitter':       emitter,
+        'hemisphere':    hemisphere,
+        'batch':         batch,
+        'settings':      settings,
+        'meas_name':     'self-monitoring-fits',
         'meas_class':    'display',
         'meas_stage':    'calibration',
         'meas_group':    'intensity',
         'meas_site':     'tum',
         'meas_data':     meas_data,
         'comments':      comments,
-        'support_files': [
-            {
-                'filetype': 'hdf5',
-                'hostname': 'data.icecube.wisc.edu',
-                'pathname': (f'/data/exp/IceCubeUpgrade/commissioning/pocam/'
-                             f'pocam_{device_id}/{target_label}_hemisphere/{emitter}'),
-                'comment':  'Raw HDF5 data. See POCAM documentation for details.',
-            },
-            {
-                'filetype': 'pdf',
-                'hostname': 'data.icecube.wisc.edu',
-                'pathname': '/data/exp/IceCubeUpgrade/commissioning/pocam/POCAM_documentation.pdf',
-                'comment':  'POCAM documentation guide.',
-            },
-        ],
     }
 
-    out_dir = os.path.join(paths['output'], batch,
-                           f'pocam_{device_id}',
-                           f'hem_{hemisphere}',
-                           emitter)
+    out_dir = os.path.join(
+        output_dir, batch, f'pocam_{device_id}', f'hem_{hemisphere}', emitter
+    )
+    print(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     filename = f'self_monitoring_{temp}C.json'
     out_path = os.path.join(out_dir, filename)
     with open(out_path, 'w') as f:
-        json.dump(result, f, indent=4)
-    print(f'  Saved → {out_path}')
+        json.dump(_to_jsonable(result), f, indent=4)
+    print(f'  Saved -> {out_path}')
 
     return result

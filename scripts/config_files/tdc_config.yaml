@@ -11,8 +11,8 @@ paths:
 # Measurement settings
 settings:
   pwm:         54000     # power [a.u.]
-  coarse:      1         # LMG coarse setting
-  fine:        20        # LMG fine setting
+  coarse:      0         # LMG coarse setting
+  fine:        47        # LMG fine setting
   mode:        default   # KAPU mode: 'default' or 'fast'
   double_peak: false     # set to true for emitters with a second peak (e.g. LMG520)
   uncertainty: false     # use Poissonian bin weights in fit
@@ -21,11 +21,17 @@ settings:
 temperatures:
   - 0
   - -20
+  - -40
+  - -10
+  - -30
 
 # Emitters to process for every hemisphere listed below.
 # Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
 emitters:
   - LMG405
+  - LMG365
+  - LMG450
+  - LMG520
 
 # Hemispheres to process.
 # Each entry needs:

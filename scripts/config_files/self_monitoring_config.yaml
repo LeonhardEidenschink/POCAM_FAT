@@ -5,7 +5,8 @@
 # Data paths
 # {hem} is replaced by the hemisphere id at runtime
 paths:
-  data: /home/ecp/disk1/main_pocam_data/{batch}/prod_characterization_{hem}/
+  data_sm: /home/ecp/disk1/main_pocam_data/{batch}/prod_characterization_{hem}/
+  data_abs_cal: ../output/
   output:      ../output/
   cal_prefix: cali_flange_   # calibration file prefix (joined with hemisphere id)
 
@@ -22,6 +23,9 @@ temperatures:
   - 25
   - 0
   - -20
+  - -30
+  - -10
+  - -40
 
 # Emitters to process for every hemisphere listed below.
 # Available: LMG365, LMG405, LMG450, LMG520, KAPU405, KAPU465
