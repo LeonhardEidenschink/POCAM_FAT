@@ -44,310 +44,94 @@ from pocam_utils import (
     _resolve_target,
 )
 
+from POCAMSiPMHandler import breakdown_func, baseline, ampl
 
-# ---------------------------------------------------------------------------
-# Physical constants
-# ---------------------------------------------------------------------------
-
-HC = 1.98644586e-25          # h·c  [m³ kg / s²]
-A_PD = 1.0                   # photodiode active area [cm²]
-DIST_CM = 96.0               # flange-equator to PD surface [cm]
-PMT_TRIGGER_THRESHOLD = 1300 # trigger rising-edge threshold [mV]
-
-# Air-to-ice transmission correction look-up table (from calibration)
-_X_PRE = np.array(X_PRE)
-_Y_PRE = np.array(Y_PRE)
-_X_VALS = np.array(X_VALUES)
-_Y_VALS = np.array(Y_VALUES)
+from pcm_monitoring_func import decode_value, get_timestamps, getADCreadings, extract_per_pwm, convert_to_perTrig, get_SiPM_dt
 
 
-# ---------------------------------------------------------------------------
-# SinglePDData
-# ---------------------------------------------------------------------------
-
-class SinglePDData:
+def read_self_monitoring_file(filename):
     """
-    Load and pre-process one PD picoamp measurement set.
+    Read a POCAM self-monitoring HDF5 file and extract all data into a dictionary.
 
     Parameters
     ----------
-    hemisphere : str    e.g. '51'
-    pwm        : int    power setting
-    temp       : int    temperature [°C]
-    diode      : str    e.g. 'LMG405'
-    target     : str    '1' or '2'
-    coarse     : int    LMG coarse setting
-    fine       : int    LMG fine setting
-    mode       : str    KAPU mode ('default' or 'fast')
-    base_path  : str    path template with {hem} placeholder
+    filename : str
+        Path to the HDF5 file.
 
-    Attributes
-    ----------
-    mean_signal_vals : float  background-subtracted mean signal [V]
-    mean_signal_err  : float  combined statistical uncertainty
+    Returns
+    -------
+    dict
+        Nested dictionary containing all extracted data.
     """
+    f_ = h5.File(filename, 'r')
 
-    def __init__(self, hemisphere, pwm, temp, diode,batch,
-                 target='1', coarse=1, fine=20, mode='default',
-                 base_path=None):
 
-        self.diode     = diode
-        self.target    = target
-        self.driver    = ('lmg' if 'LMG' in diode else 'kapu') + target
-        self.pwm       = pwm
-        self.coarse    = coarse
-        self.fine      = fine
-        self.mode      = mode
-        self.temp      = temp
-        self.batch     = batch
+    all_data = {}
+    for sipm_pwm_ in f_['metadata/sipm_pwm']:
+        all_data[sipm_pwm_]= {}
+        for flm_ in f_['metadata']['flasher_modes']:
+            all_data[sipm_pwm_][flm_.decode()] = extract_per_pwm(f_['flashes/{:d}/{:s}'.format(sipm_pwm_, flm_.decode())])
 
-        h5_path = base_path.format(batch = batch, hem=hemisphere)
-        h = h5.File(h5_path + diode, 'r')
-        key = _build_key(diode, self.driver, pwm, coarse, fine, mode, temp)
+    data_dict = {}
 
-        self.vals    = np.array(h[key].get('intensity_signal'))
-        print(np.array(h[key].get('intensity_signal')))
-        self.bg_vals = np.array(h[key].get('intensity_bg'))
-        h.close()
+
+    for flasher in ['lmg0', 'lmg1', 'lmg2', 'lmg3', 'kapu0', 'kapu3']:
+    data_dict[flasher] = {}
+    data_dict[flasher]["sipm_data"] = {}
+    data_dict[flasher]["pd_data"] = {}
+    
+    lmg1_app = '_A'
+    
+    for sipm_pwm_ in f_['metadata']['sipm_pwm'][()]:#[:2]: 
+        if not 'lmg1' in flasher:
+            flasher_pd = flasher
+        elif 'lmg1' in flasher:
+            flasher_pd = flasher + lmg1_app#flasher_pd
         
-
-        self.mean_bg_vals  = np.mean(self.bg_vals)
-        self.std_bg_vals   = np.std(self.bg_vals)
-
-        signal_vals            = self.vals - self.mean_bg_vals
-        self.mean_signal_vals  = -1.0 * np.mean(signal_vals)   # invert to positive
-        self.std_signal_vals   = np.std(signal_vals)
-        self.mean_signal_err   = np.sqrt(self.std_signal_vals**2
-                                         + self.std_bg_vals**2)
         
+        plotval = np.array([(all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['sum'].mean() - all_data[sipm_pwm_][flasher_pd][0]['adcA']['sum'].mean()) for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
 
+        data_dict[flasher]["pd_data"]['adcA'] = {}
+        data_dict[flasher]["pd_data"]['adcA']['flasher_pwm'] = f_['metadata']['flasher_pwm'][()]
+        data_dict[flasher]["pd_data"]['adcA']['adcA_peak_mean'] = plotval
+        data_dict[flasher]["pd_data"]['adcA']['adcA_peak_std'] = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['peak'].std() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
 
-# ---------------------------------------------------------------------------
-# SinglePMTData
-# ---------------------------------------------------------------------------
+        plotval = np.array([(all_data[sipm_pwm_][flasher_pd][fpwm_]['adcB']['sum'].mean() - all_data[sipm_pwm_][flasher_pd][0]['adcB']['sum'].mean()) for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
+        
+        data_dict[flasher]["pd_data"]['adcB'] = {}
+        data_dict[flasher]["pd_data"]['adcB']['flasher_pwm'] = f_['metadata']['flasher_pwm'][()]
+        data_dict[flasher]["pd_data"]['adcB']['adcB_peak_mean'] = plotval
+        data_dict[flasher]["pd_data"]['adcB']['adcB_peak_std'] = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['adcB']['peak'].std() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
 
-class SinglePMTData:
-    """
-    Load and pre-process one PMT waveform dataset.
+        plotval = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['tdc2_dt'].mean() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
+        data_dict[flasher]["sipm_data"]['tdc2'] = {}
+        data_dict[flasher]["sipm_data"]['tdc2']['flasher_pwm'] = f_['metadata']['flasher_pwm'][()]
+        data_dict[flasher]["sipm_data"]['tdc2']['tdc2_peak_mean'] = plotval
+        data_dict[flasher]["sipm_data"]['tdc2']['tdc2_peak_std'] = np.array([all_data[sipm_pwm_][flasher_pd][fpwm_]['tdc2_dt'].std() for fpwm_ in f_['metadata']['flasher_pwm'][()] ] )
 
-    Parameters
-    ----------
-    Same signature as SinglePDData (hemisphere, pwm, temp, diode, …).
+        return data_dict
 
-    Attributes
-    ----------
-    processed_data : dict with keys
-        integrated_signal, peak, peak_time,
-        trigger_rising_edge, start_integration, end_integration
-    """
+def cross_check_absolute_calibration(hemisphere, device_id, emitter, path_abs_cal):
+    pwm = []
+    val_pd = []
+    filelist = glob.glob(path_abs_cal)
+    for file in filelist:
+        with open(file, 'r') as f:
+            data = json.load(f)
+            pwm.append(data['meas_data'][0]['power'])
+            val_pd.append(data['meas_data'][0]['value'])
 
-    def __init__(self, hemisphere, pwm, temp, diode, batch, 
-                 target='1', coarse=1, fine=20, mode='default',
-                 base_path=None, info=False):
+    sorted_idx = np.argsort(pwm)
+    pwm  = np.array(pwm)[sorted_idx]
+    val_pd = np.array(val_pd)[sorted_idx]
 
-        self.diode  = diode
-        self.target = target
-        self.driver = ('lmg' if 'LMG' in diode else 'kapu') + target
-        self.pwm    = pwm
-        self.coarse = coarse
-        self.fine   = fine
-        self.mode   = mode
-        self.temp   = temp
-        self.batch  = batch
+    return pwm, val_pd
 
-        h5_path = base_path.format(batch = batch, hem=hemisphere)
-        h = h5.File(h5_path + diode, 'r')
-        key = _build_key(diode, self.driver, pwm, coarse, fine, mode, temp)
+def self_monitoring_analysis(hemisphere, device_id, emitter, temp, paths, batch):
 
-        self.pmt_time_ns = np.array(h[key].get('pmt_time_ns'))
-        self.pmt_signal  = np.array(h[key].get('pmt_signal'))
-        self.pmt_trigger = np.array(h[key].get('pmt_trigger'))
-        h.close()
+    filepath = 
+    data_dict = read_self_monitoring_file(filepath)
 
-        processed = {k: [] for k in ('integrated_signal', 'peak', 'peak_time',
-                                     'trigger_rising_edge', 'start_integration',
-                                     'end_integration')}
-
-        abs_signals = [np.abs(wf) for wf in self.pmt_signal]
-
-        for i, sig in enumerate(abs_signals):
-            try:
-                peak       = np.max(sig)
-                peak_idx   = np.argmax(sig)
-                peak_time  = self.pmt_time_ns[peak_idx]
-                interp     = scipy.interpolate.InterpolatedUnivariateSpline(
-                                 self.pmt_time_ns, sig)
-
-                left_times  = self.pmt_time_ns[:peak_idx]
-                left_zeros  = np.where(sig[:peak_idx] == 0)[0]
-                start       = self.pmt_time_ns[np.max(left_zeros)]
-
-                right_times = self.pmt_time_ns[peak_idx + 1:]
-                right_zeros = np.where(sig[peak_idx + 1:] == 0)[0]
-                end         = right_times[np.min(right_zeros)]
-
-                integrated  = scipy.integrate.quad(interp, start, end)[0]
-
-                # Trigger rising edge: first sample >= threshold
-                j = 0
-                while j < len(self.pmt_time_ns):
-                    if self.pmt_trigger[i][j] >= PMT_TRIGGER_THRESHOLD:
-                        rising_edge = self.pmt_time_ns[j]
-                        break
-                    j += 1
-
-                processed['integrated_signal'].append(integrated)
-                processed['peak'].append(peak)
-                processed['peak_time'].append(peak_time)
-                processed['trigger_rising_edge'].append(rising_edge)
-                processed['start_integration'].append(start)
-                processed['end_integration'].append(end)
-
-            except Exception as e:
-                print(f'  Warning: waveform {i} skipped — {e}')
-
-        self.processed_data = {k: np.array(v) for k, v in processed.items()}
-
-        if info:
-            self._print_info()
-
-    def _print_info(self):
-        pd = self.processed_data
-        n  = len(pd['integrated_signal'])
-        print(f'  Processed waveforms : {n} / {len(self.pmt_signal)}')
-        print(f'  Mean integrated sig : '
-              f'{np.mean(pd["integrated_signal"]):.2f} mV·ns')
-        print(f'  Mean peak           : {np.mean(pd["peak"]):.2f} mV')
-
-
-# ---------------------------------------------------------------------------
-# SingleAngularCalData
-# ---------------------------------------------------------------------------
-
-class SingleAngularCalData:
-    """
-    Load flange-calibration data for one hemisphere / emitter and compute the
-    baseline photon number via angular integration.
-
-    Parameters
-    ----------
-    hemisphere : str
-    diode      : str    e.g. 'LMG405'
-    base_path  : str    path template with {hem} placeholder
-    cal_prefix : str    calibration file prefix (default 'cali_flange_')
-
-    Attributes
-    ----------
-    photons          : float  total emitted photons per pulse
-    photons_sys_err  : float  systematic error
-    photons_stat_err : float  statistical error
-    rel_sys_error    : float
-    rel_stat_error   : float
-    popt             : array  sigmoid fit parameters
-    hemisphere_sn    : str    serial number from metadata
-    pulse_time_s     : float  pulse duration [s]
-    zero_current_A   : float  normalisation current [A]
-    """
-
-    def __init__(self, hemisphere, diode, base_path, batch, cal_prefix='cali_flange_'):
-
-        self.diode     = diode
-        self.hemisphere = hemisphere
-        self.batch     = batch
-
-        h5_path  = base_path.format(batch = batch, hem=hemisphere)
-        cal_file = h5_path + cal_prefix + hemisphere
-        h        = h5.File(cal_file, 'r+')
-
-        self.hemisphere_sn = str(int(h['meta'].attrs['AB_SN']))
-        self.pulse_time_s  = float(h['meta'].attrs['PulseTime']) * 1e-6
-        ncal               = h['meta'].attrs['ncal']
-
-        # ---- Angular binning (HEALPix) ----
-        NSIDE    = 4
-        ipix     = hp.query_strip(NSIDE, np.radians(0), np.radians(150))
-        deg      = np.degrees(hp.pix2ang(nside=NSIDE, ipix=ipix))
-        zenith   = np.round(deg[0], 2)
-        azimuth  = np.round(deg[1], 2)
-        indices  = np.where(np.diff(azimuth) < 0)[0]
-        zeniths  = np.unique(zenith)
-
-        # ---- Current readings ----
-        arr        = np.array(h.get(diode))
-        y_raw      = arr[2] * 1e12          # [pA]
-        y_err_raw  = arr[3] * 1e12
-
-        # Split by azimuth ring boundaries and average per zenith ring
-        y_split     = np.split(y_raw,    indices + 1)
-        yerr_split  = np.split(y_err_raw, indices + 1)
-
-        y_mean = np.array([np.mean(seg) for seg in y_split])
-        y_err  = np.array([
-            np.sqrt(np.std(seg)**2
-                    + np.sum(np.array(e)**2) / len(e))
-            for seg, e in zip(y_split, yerr_split)
-        ])
-
-        self.zero_current_A = np.abs(h[diode].attrs['zero_data'][0])
-        h.close()
-
-        # ---- Air-to-ice correction ----
-        popt_air, popt_ice = fit_correction_curves()
-        zen_rad  = zeniths * np.pi / 180.0
-        val_norm = y_mean * 1e-12 / self.zero_current_A   # normalise
-
-        # Relative error from simulation mismatch
-        sim_mismatch = 0.025
-        dp_err = np.sqrt((y_err * 1e-12)**2
-                         + (val_norm * sim_mismatch)**2)
-
-        values = val_norm * (sigmoid(zen_rad, *popt_ice)
-                             / sigmoid(zen_rad, *popt_air))
-
-        # ---- Angular fit ----
-        popt, pcov = curve_fit(sigmoid, zen_rad, values,
-                               p0=[1.1, -5.0, 1.5, -0.005], maxfev=1000)
-        self.popt = popt
-        self.pcov = pcov
-
-        # ---- Photon number (MC) ----
-        resp       = NIST[diode][0]
-        resp_err   = NIST[diode][1]
-        wl_m       = float(diode[-3:]) * 1e-9
-        geo        = DIST_CM**2 / A_PD
-
-        baseline   = calc_photons(self.zero_current_A, wl_m, resp,
-                                   self.pulse_time_s, geo)
-
-        N_mc       = 1000
-        param_samp = multivariate_normal(popt, pcov, size=N_mc)
-        ph_samp    = [integrate_solid_angle(s) * 2 * np.pi * baseline
-                      for s in param_samp]
-
-        self.photons           = float(np.mean(ph_samp))
-        self.photons_int_err   = float(np.std(ph_samp))
-
-        # ---- Error budget ----
-        photons_d_err   = 2 * 0.5 / DIST_CM * self.photons       # 0.5 cm distance err
-        photons_R_err   = resp_err / resp * self.photons
-        rel_I           = np.sqrt(np.mean((y_err * 1e-12 / y_mean * 1e-12)**2))
-        photons_I_err   = rel_I * self.photons
-        photons_ps_err  = 0.01 * self.photons                     # point-source approx
-        photons_sim_err = 0.025 * self.photons
-
-        self.photons_sys_err  = (np.abs(photons_d_err)
-                                 + np.abs(photons_R_err)
-                                 + photons_ps_err)
-        self.photons_stat_err = np.sqrt(self.photons_int_err**2
-                                        + photons_I_err**2
-                                        + photons_sim_err**2)
-
-        self.rel_sys_error  = self.photons_sys_err  / self.photons
-        self.rel_stat_error = self.photons_stat_err / self.photons
-
-        # Mean-measurement error (scaled by sqrt(50) for repeated measurements)
-        self.mean_rel_sys_error  = self.rel_sys_error
-        self.mean_rel_stat_error = self.photons_stat_err / np.sqrt(50) / self.photons
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +139,7 @@ class SingleAngularCalData:
 # ---------------------------------------------------------------------------
 
 def compute_and_save(hemisphere, device_id, emitter,
-                     pwm, temp, coarse, fine, mode,
+                     temp,
                      paths, batch,
                      target=None):
     """
