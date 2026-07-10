@@ -1,0 +1,44 @@
+{
+    "device_uid": "pocam-20250130_012",
+    "subdevice_uid": "pocam-led-master_k-465_012",
+    "meas_name": "led-number-of-emitted-photons",
+    "meas_class": "display",
+    "meas_stage": "calibration",
+    "meas_group": "luminosity",
+    "meas_site": "tum",
+    "meas_time": 1738207605.549154,
+    "meas_data": [
+        {
+            "data_format": "value",
+            "value": 206616271.06,
+            "error": 0.0575,
+            "power": 30000,
+            "temperature": -40,
+            "label": "Number-of-Emitted-Photons-per-Pulse",
+            "mode": "default"
+        },
+        {
+            "data_format": "summary",
+            "label": "PMT-Waveform-Summary",
+            "power": 30000,
+            "temperature": -40,
+            "value": 174727342.6788553,
+            "mean_integrated_signal_mv_ns": 5866.5683,
+            "mode": "default"
+        }
+    ],
+    "support_files": [
+        {
+            "filetype": "hdf5",
+            "hostname": "data.icecube.wisc.edu",
+            "pathname": "/data/exp/IceCubeUpgrade/commissioning/pocam/pocam_012/master_hemisphere/KAPU465",
+            "comment": "Raw HDF5 data. See POCAM documentation for details."
+        },
+        {
+            "filetype": "pdf",
+            "hostname": "data.icecube.wisc.edu",
+            "pathname": "/data/exp/IceCubeUpgrade/commissioning/pocam/POCAM_documentation.pdf",
+            "comment": "POCAM documentation guide."
+        }
+    ]
+}

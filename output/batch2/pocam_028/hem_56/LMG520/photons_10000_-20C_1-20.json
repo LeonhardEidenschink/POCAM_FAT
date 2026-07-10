@@ -1,0 +1,46 @@
+{
+    "device_uid": "pocam-20250413_028",
+    "subdevice_uid": "pocam-led-slave_l-520_028",
+    "meas_name": "led-number-of-emitted-photons",
+    "meas_class": "display",
+    "meas_stage": "calibration",
+    "meas_group": "luminosity",
+    "meas_site": "tum",
+    "meas_time": 1744575809.821632,
+    "meas_data": [
+        {
+            "data_format": "value",
+            "value": 3657498.67,
+            "error": 2.3437,
+            "power": 10000,
+            "temperature": -20,
+            "label": "Number-of-Emitted-Photons-per-Pulse",
+            "coarse": 1,
+            "fine": 20
+        },
+        {
+            "data_format": "summary",
+            "label": "PMT-Waveform-Summary",
+            "power": 10000,
+            "temperature": -20,
+            "value": 2108742.7599221887,
+            "mean_integrated_signal_mv_ns": 38.967,
+            "coarse": 1,
+            "fine": 20
+        }
+    ],
+    "support_files": [
+        {
+            "filetype": "hdf5",
+            "hostname": "data.icecube.wisc.edu",
+            "pathname": "/data/exp/IceCubeUpgrade/commissioning/pocam/pocam_028/slave_hemisphere/LMG520",
+            "comment": "Raw HDF5 data. See POCAM documentation for details."
+        },
+        {
+            "filetype": "pdf",
+            "hostname": "data.icecube.wisc.edu",
+            "pathname": "/data/exp/IceCubeUpgrade/commissioning/pocam/POCAM_documentation.pdf",
+            "comment": "POCAM documentation guide."
+        }
+    ]
+}

@@ -1,0 +1,40 @@
+{
+    "device_uid": "pocam-20240603_003",
+    "subdevice_uid": "pocam-led-slave_k-465_003",
+    "meas_name": "led-number-of-emitted-photons",
+    "meas_class": "display",
+    "meas_stage": "calibration",
+    "meas_group": "luminosity",
+    "meas_site": "tum",
+    "meas_time": 1717432015.879723,
+    "meas_data": [
+        {
+            "data_format": "value",
+            "value": 733656494.83,
+            "error": 0.0446,
+            "power": 54000,
+            "temperature": -20,
+            "label": "Number-of-Emitted-Photons-per-Pulse",
+            "mode": "default"
+        }
+    ],
+    "comments": [
+        "Total emitted photons per pulse for this hemisphere over the full solid angle at the given conditions.",
+        "Value based on repeated PD light-output measurements.",
+        "Mean relative error for multi-pulse runs: 0.03"
+    ],
+    "support_files": [
+        {
+            "filetype": "hdf5",
+            "hostname": "data.icecube.wisc.edu",
+            "pathname": "/data/exp/IceCubeUpgrade/commissioning/pocam/pocam_003/slave_hemisphere/KAPU465",
+            "comment": "Raw HDF5 data. See POCAM documentation for details."
+        },
+        {
+            "filetype": "pdf",
+            "hostname": "data.icecube.wisc.edu",
+            "pathname": "/data/exp/IceCubeUpgrade/commissioning/pocam/POCAM_documentation.pdf",
+            "comment": "POCAM documentation guide."
+        }
+    ]
+}
