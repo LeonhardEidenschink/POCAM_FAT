@@ -94,7 +94,7 @@ def read_self_monitoring_file(filename):
                 'flasher_pwm':      flasher_pwm,
                 'adcA_peak_mean':   plotval_a,
                 'adcA_peak_std':    np.array([
-                    all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['peak'].std()
+                    all_data[sipm_pwm_][flasher_pd][fpwm_]['adcA']['sum'].std()
                     for fpwm_ in flasher_pwm
                 ]),
             }
@@ -133,6 +133,7 @@ def cross_check_absolute_calibration(abs_cal_glob):
     """Read (pwm, value) pairs from all abs-cal JSON files matching abs_cal_glob."""
     pwm = []
     val_pd = []
+    err_pd = []
     filelist = glob.glob(abs_cal_glob)
     if not filelist:
         raise FileNotFoundError(
@@ -143,12 +144,14 @@ def cross_check_absolute_calibration(abs_cal_glob):
             data = json.load(f)
             pwm.append(data['meas_data'][0]['power'])
             val_pd.append(data['meas_data'][0]['value'])
+            err_pd.append(data['meas_data'][0]['error'])  # default to 0 if not present
 
     sorted_idx = np.argsort(pwm)
     pwm = np.array(pwm)[sorted_idx]
     val_pd = np.array(val_pd)[sorted_idx]
+    err_pd = np.array(err_pd)[sorted_idx]
 
-    return pwm, val_pd
+    return pwm, val_pd, err_pd
 
 
 def self_monitoring_analysis(emitter, flasher_key, sm_filepath, abs_cal_glob,
@@ -186,14 +189,15 @@ def self_monitoring_analysis(emitter, flasher_key, sm_filepath, abs_cal_glob,
     }
 
     data_dict = read_self_monitoring_file(sm_filepath)
-    pwm, val_pd = cross_check_absolute_calibration(abs_cal_glob)
+    pwm, val_pd,err_pd = cross_check_absolute_calibration(abs_cal_glob)
 
     mask_pd = np.isin(data_dict[flasher_key]["pd_data"]['adcA']['flasher_pwm'], pwm)
     n_pd = data_dict[flasher_key]["pd_data"]['adcA']['adcA_peak_mean'][mask_pd]
+    err_adc = data_dict[flasher_key]["pd_data"]['adcA']['adcA_peak_std'][mask_pd]
 
     mask_sipm = np.isin(data_dict[flasher_key]["sipm_data"]['tdc2']['flasher_pwm'], pwm)
     n_sipm = data_dict[flasher_key]["sipm_data"]['tdc2']['tdc2_peak_mean'][mask_sipm]
-
+    err_tdc = data_dict[flasher_key]["sipm_data"]['tdc2']['tdc2_peak_std'][mask_sipm]
     fit_results = {}
 
     # --- PD: linear fit ---
@@ -202,6 +206,8 @@ def self_monitoring_analysis(emitter, flasher_key, sm_filepath, abs_cal_glob,
         'pwm':              pwm,
         'val_pd':           val_pd,
         'n_pd':             n_pd,
+        'err_adc':          err_adc,
+        'err_pd':           err_pd,
         'slope':            popt_pd[0],
         'intercept':        popt_pd[1],
         'slope_error':      np.sqrt(pcov_pd[0][0]),
@@ -230,7 +236,9 @@ def self_monitoring_analysis(emitter, flasher_key, sm_filepath, abs_cal_glob,
     fit_results['sipm'] = {
         'pwm':              pwm,
         'val_pd':           val_pd,
+        'err_pd':           err_pd,
         'n_sipm':           n_sipm,
+        'err_tdc':          err_tdc,
         'x_fine':           x_fine,
         'y_fine':           y_fine,
         'ref_photons':      ref_photons[emitter],
@@ -295,6 +303,9 @@ def compute_and_save(hemisphere, device_id, emitter, flasher_key, temp,
         'title':            'PD signal vs. flasher power — linear fit',
         'power':            fit_results['pd']['pwm'],
         'value':            fit_results['pd']['n_pd'],
+        'std':              fit_results['pd']['err_adc'],
+        'val_pd':           fit_results['pd']['val_pd'],
+        'error':            fit_results['pd']['err_pd'],
         'slope':            fit_results['pd']['slope'],
         'intercept':        fit_results['pd']['intercept'],
         'slope_error':      fit_results['pd']['slope_error'],
@@ -309,7 +320,9 @@ def compute_and_save(hemisphere, device_id, emitter, flasher_key, temp,
         'title':            'SiPM signal vs. abs-cal PD value — spline + isotonic fit',
         'power':            fit_results['sipm']['pwm'],
         'val_pd':           fit_results['sipm']['val_pd'],
+        'error':            fit_results['sipm']['err_pd'],
         'value':            fit_results['sipm']['n_sipm'],
+        'std':              fit_results['sipm']['err_tdc'],
         'x_fine':           fit_results['sipm']['x_fine'],
         'y_fine':           fit_results['sipm']['y_fine'],
         'ref_photons':      fit_results['sipm']['ref_photons'],
